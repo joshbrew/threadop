@@ -90,6 +90,8 @@ function threadop(
 
 There is an `examples.html` file in the example/ folder in this repo, you can run it with the LiveServer extension in VSCode and look in the console to see it working. Below are all the examples tested.
 
+There is also a subfolder called `example/npmproject` that you can run following the readme.
+
 ### Example 1: One-off usage
 ```js
     /*
