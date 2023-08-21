@@ -15,16 +15,17 @@ export type WorkerHelper = {
         [key: number]: (data: any, cb?: number) => void;
     };
 };
-export declare function threadOp(callback?: (data: any) => any, options?: {
+export declare function threadop(callback?: (data: any) => any, options?: {
     imports?: ImportsInput;
     message: any;
     transfer?: Transferable[];
     port?: Worker;
     blocking?: boolean;
 }): Promise<any>;
-export declare function threadOp(callback?: (data: any) => any, options?: {
+export declare function threadop(callback?: (data: any) => any, options?: {
     imports?: ImportsInput;
     transfer?: Transferable[];
     port?: Worker;
     blocking?: boolean;
 }): Promise<WorkerHelper>;
+export default threadop;

@@ -25,22 +25,22 @@
             */
     
     
-    /*
-        Overview of threadOp:
-        threadOp is a utility function that simplifies working with Web Workers in JavaScript. It allows you to:
-    
-        Run code off the main thread: By sending functions and data to a Web Worker, you can perform tasks without blocking 
-        the main thread. This is especially useful for heavy computational tasks.
-        Sequentially process data: By retaining a handle to the worker (e.g., workerHelper), you can send multiple pieces of 
-        data sequentially for processing.
-        Chain multiple workers: Establish communication between two or more workers, allowing you to create a pipeline of operations.
-        Load external libraries/modules: Bring in additional scripts or libraries into the worker context for more complex operations.
-        Remember that Web Workers run in a different context than the main thread. This means they don't have access to the DOM, 
-        and they run in parallel to the main thread, allowing for concurrent operations.
-    
-    */
-    
-            function threadOp(
+            /*
+                Overview of threadop:
+                threadop is a utility function that simplifies working with Web Workers in JavaScript. It allows you to:
+            
+                Run code off the main thread: By sending functions and data to a Web Worker, you can perform tasks without blocking 
+                the main thread. This is especially useful for heavy computational tasks.
+                Sequentially process data: By retaining a handle to the worker (e.g., workerHelper), you can send multiple pieces of 
+                data sequentially for processing.
+                Chain multiple workers: Establish communication between two or more workers, allowing you to create a pipeline of operations.
+                Load external libraries/modules: Bring in additional scripts or libraries into the worker context for more complex operations.
+                Remember that Web Workers run in a different context than the main thread. This means they don't have access to the DOM, 
+                and they run in parallel to the main thread, allowing for concurrent operations.
+            
+            */
+        
+            function threadop(
                 callback = (data) => data, 
                 { 
                     imports, //ImportsInput
@@ -334,7 +334,7 @@
     
             //Example 1: One-off usage
             /*
-                This is the simplest usage of threadOp.
+                This is the simplest usage of threadop.
     
                 You have a function, workerFunction, that you want to run in a separate thread (i.e., Web Worker).
                 You send a single piece of data (5) to this worker, the worker multiplies this data by 2, and sends the result 
@@ -350,8 +350,8 @@
                 return data * 2;
             };
     
-            // Run the function with the threadOp
-            threadOp(workerFunction, {
+            // Run the function with the threadop
+            threadop(workerFunction, {
                 message: 5, // Sending a one-off message
             }).then(result => {
                 console.log('Example 1: result', result); // Expected: 10
@@ -371,7 +371,7 @@
             /*
                 This is an example of how to run multiple operations sequentially in a worker.
     
-                You initialize the worker with a function (workerFunction2) using threadOp.
+                You initialize the worker with a function (workerFunction2) using threadop.
                 Once the worker is ready, you send it multiple pieces of data sequentially. Each piece of data is processed independently.
                 After all operations, the worker is terminated explicitly using the workerHelper.terminate() method. This is 
                 important to ensure that we don't have lingering worker threads.
@@ -383,7 +383,7 @@
                 return data * 2;
             };
     
-            threadOp(workerFunction2).then(workerHelper => {
+            threadop(workerFunction2).then(workerHelper => {
                 workerHelper.run(5).then(r1 => {
                     console.log('Example 2: r1', r1); // Expected: 10
                 });
@@ -429,12 +429,12 @@
             };
     
             // Initialize first worker
-            threadOp(workerFunctionA, {
+            threadop(workerFunctionA, {
                 blocking: true,
             }).then(workerHelperA => {
             
                 // Initialize second worker and set up message port for chained communication
-                threadOp(workerFunctionB).then(workerHelperB => {
+                threadop(workerFunctionB).then(workerHelperB => {
                     workerHelperA.addPort(workerHelperB.worker);
     
                     let ctr = 0;
@@ -468,7 +468,7 @@
     
                 You want to perform some operations on data using the numjs library. So, before running the worker, 
                 you specify that this library should be imported.
-                The imports option in threadOp allows you to specify which external scripts or libraries the worker 
+                The imports option in threadop allows you to specify which external scripts or libraries the worker 
                 should load before it begins execution.
                 The data is then sent to the worker, processed using the numjs functions, and the result is returned.
     
@@ -483,7 +483,7 @@
             // Sample data
             const data = [1, 2, 3, 4, 5];
     
-            threadOp(computeMean, {
+            threadop(computeMean, {
                 imports: './num.min.js', //['./num.min.js'] //or { './num.min.js':true } //use objects to get more fine grained, e.g. for a import url pass an object with specific module methods and alias strings or bools
                 message: data
             }).then(result => {
@@ -503,7 +503,7 @@
             // Sample data
             const lodata = ['HelloWorld', 'left pad', 'ECMAScript'];
     
-            threadOp(lodashop, {
+            threadop(lodashop, {
                 imports: {[`https://cdn.skypack.dev/lodash@4`]:{snakeCase :true}}, //['./num.min.js'] //or { './num.min.js':true } //use objects to get more fine grained, e.g. for a import url pass an object with specific module methods and alias strings or bools
                 message: lodata
             }).then(result => {

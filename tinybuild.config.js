@@ -1,7 +1,7 @@
 const config = {
     bundler: { //esbuild settings, set false to skip build step or add bundle:true to config object to only bundle (alt methods)
         entryPoints: [ //entry point file(s). These can include .js, .mjs, .ts, .jsx, .tsx, or other javascript files. Make sure your entry point is a ts file if you want to generate types
-        "threadop.js"
+            "threadop.ts"
         ],
         outfile: "dist/threadop", //exit point file, will append .js as well as indicators like .esm.js, .node.js for other build flags
         //outdir:'dist'         //exit point folder, define for multiple entryPoints
@@ -19,7 +19,7 @@ const config = {
         //blobWorkers:true, //package workers as blobs or files? blobs are faster but inflate the main package size
         //workerBundler:{minifyWhitespace:true} //bundler settings specific to the worker. e.g. apply platform:'node' when bundling node workers, 
         //globalThis:null //'mymodule'
-        //globals:{'index.js':['Graph']}
+        globals:{'threadop.ts':['threadop']}
         //init:{'index.js':function(bundle) { console.log('prepackaged bundle script!', bundle); }.toString(); }      
         //  outputs:{ //overwrites main config settings for specific use cases
         //     node:{ //e.g. for bundleNode

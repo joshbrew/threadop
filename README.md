@@ -12,6 +12,23 @@ Create multithreaded pipelines (with esm imports) in a single script file with a
 - Specify imports (local or remote) from strings or objects to use the full range of esm import abilities.
 - Dramatically increase program performance with easy parallelism!
 
+Import `threadop` as the default import 
+
+`import threadop from 'threadop` 
+
+Or as a method 
+
+`import {threadop} from 'threadop'` 
+
+Or access it as a global variable 
+
+```html
+<script src="https://cdn.jsdelivr.net/npm/threadop@latest">
+    let thread = threadop(data => {return data*2}); //globalThis.threadop
+    thread.run(5).then(console.log);
+</script>
+```
+
 ## Examples
 
 There is an `examples.html` file in the example/ folder in this repo, you can run it with the LiveServer extension in VSCode and look in the console to see it working. Below are all the examples tested.
@@ -19,7 +36,7 @@ There is an `examples.html` file in the example/ folder in this repo, you can ru
 ### Example 1: One-off usage
 ```js
     /*
-        This is the simplest usage of threadOp.
+        This is the simplest usage of threadop.
 
         You have a function, workerFunction, that you want to run in a separate thread (i.e., Web Worker).
         You send a single piece of data (5) to this worker, the worker multiplies this data by 2, and sends the result 
@@ -35,8 +52,8 @@ There is an `examples.html` file in the example/ folder in this repo, you can ru
         return data * 2;
     };
 
-    // Run the function with the threadOp
-    threadOp(workerFunction, {
+    // Run the function with the threadop
+    threadop(workerFunction, {
         message: 5, // Sending a one-off message
     }).then(result => {
         console.log('Example 1: result', result); // Expected: 10
@@ -50,7 +67,7 @@ There is an `examples.html` file in the example/ folder in this repo, you can ru
     /*
         This is an example of how to run multiple operations sequentially in a worker.
 
-        You initialize the worker with a function (workerFunction2) using threadOp.
+        You initialize the worker with a function (workerFunction2) using threadop.
         Once the worker is ready, you send it multiple pieces of data sequentially. Each piece of data is processed independently.
         After all operations, the worker is terminated explicitly using the workerHelper.terminate() method. This is 
         important to ensure that we don't have lingering worker threads.
@@ -62,7 +79,7 @@ There is an `examples.html` file in the example/ folder in this repo, you can ru
         return data * 2;
     };
 
-    threadOp(workerFunction2).then(workerHelper => {
+    threadop(workerFunction2).then(workerHelper => {
         workerHelper.run(5).then(r1 => {
             console.log('Example 2: r1', r1); // Expected: 10
         });
@@ -103,12 +120,12 @@ There is an `examples.html` file in the example/ folder in this repo, you can ru
     };
 
     // Initialize first worker
-    threadOp(workerFunctionA, {
+    threadop(workerFunctionA, {
         blocking: true,
     }).then(workerHelperA => {
     
         // Initialize second worker and set up message port for chained communication
-        threadOp(workerFunctionB).then(workerHelperB => {
+        threadop(workerFunctionB).then(workerHelperB => {
             workerHelperA.addPort(workerHelperB.worker);
 
             let ctr = 0;
@@ -143,7 +160,7 @@ There is an `examples.html` file in the example/ folder in this repo, you can ru
 
         You want to perform some operations on data using the numjs library. So, before running the worker, 
         you specify that this library should be imported.
-        The imports option in threadOp allows you to specify which external scripts or libraries the worker 
+        The imports option in threadop allows you to specify which external scripts or libraries the worker 
         should load before it begins execution.
         The data is then sent to the worker, processed using the numjs functions, and the result is returned.
 
@@ -158,7 +175,7 @@ There is an `examples.html` file in the example/ folder in this repo, you can ru
     // Sample data
     const data = [1, 2, 3, 4, 5];
 
-    threadOp(computeMean, {
+    threadop(computeMean, {
         imports: './num.min.js', //['./num.min.js'] //or { './num.min.js':true } //use objects to get more fine grained, e.g. for a import url pass an object with specific module methods and alias strings or bools
         message: data
     }).then(result => {
@@ -179,7 +196,7 @@ There is an `examples.html` file in the example/ folder in this repo, you can ru
     // Sample data
     const lodata = ['HelloWorld', 'left pad', 'ECMAScript'];
 
-    threadOp(lodashop, {
+    threadop(lodashop, {
         imports: {[`https://cdn.skypack.dev/lodash@4`]:{snakeCase :true}}, //['./num.min.js'] //or { './num.min.js':true } //use objects to get more fine grained, e.g. for a import url pass an object with specific module methods and alias strings or bools
         message: lodata
     }).then(result => {

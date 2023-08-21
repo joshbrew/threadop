@@ -24,7 +24,7 @@ export type WorkerHelper = {
 
 //overloads
 // When the message is defined, the function returns a Promise<any>.
-export function threadOp(
+export function threadop(
     callback?: (data: any) => any, 
     options?: {
         imports?: ImportsInput, 
@@ -36,7 +36,7 @@ export function threadOp(
 ): Promise<any>;
 
 // When the message isn't defined, the function returns a Promise<WorkerHelper>.
-export function threadOp(
+export function threadop(
     callback?: (data: any) => any, 
     options?: {
         imports?: ImportsInput, 
@@ -49,7 +49,7 @@ export function threadOp(
 
 //implementation
 
-export function threadOp(
+export function threadop(
     callback = (data) => data, 
     { 
         imports, //ImportsInput
@@ -341,3 +341,7 @@ function setupPort(worker, port, id, blocking) {
     if(!port.PORTS) port.PORTS = [];
     port.PORTS.push(worker);
 }
+
+//globalThis.threadop = threadop;
+
+export default threadop;
