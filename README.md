@@ -6,7 +6,7 @@
 ![threadop-downloads](https://img.shields.io/npm/dt/threadop.svg)
 ![threadop-l](https://img.shields.io/npm/l/threadop)
 
-Pure (~250 line unminified) implementation of a Web Worker thread operation helper. For use in browser or with the web worker library in Nodejs
+Pure (~250 line unminified, 4kb minified) implementation of a Web Worker thread operation helper. For use in browser or with the web worker library in Nodejs
 
 Create multithreaded pipelines (with esm imports) in a single script file with a clear, minimal workflow.
 
