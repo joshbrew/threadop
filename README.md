@@ -4,7 +4,7 @@
 
 Pure (~250 line unminified) implementation of a Web Worker thread operation helper. For use in browser or with the web worker library in Nodejs
 
-Create multithreaded pipelines in a single script file with a clear, minimal workflow.
+Create multithreaded pipelines (with esm imports) in a single script file with a clear, minimal workflow.
 
 - Instantiate a thread from a function that simple expects the event.data from the message
 - One-off or repeat use with cleanup.
