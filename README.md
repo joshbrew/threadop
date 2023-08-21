@@ -1,6 +1,9 @@
 ## threadop
 
 `npm i threadop`
+![threadop-status](https://img.shields.io/npm/v/threadop.svg) 
+![threadop-downloads](https://img.shields.io/npm/dt/threadop.svg)
+![threadop-l](https://img.shields.io/npm/l/threadop)
 
 Pure (~250 line unminified) implementation of a Web Worker thread operation helper. For use in browser or with the web worker library in Nodejs
 
