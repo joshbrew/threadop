@@ -11,7 +11,7 @@ Pure (~250 line unminified) implementation of a Web Worker thread operation help
 Create multithreaded pipelines (with esm imports) in a single script file with a clear, minimal workflow.
 
 - Instantiate a thread from a function that simply expects the event.data from the thread postMessage function
-- One-off or repeat use with cleanup.
+- One-off or repeat use with easy cleanup.
 - Chain multiple workers with message port automation
 - Specify imports (local or remote) from strings or objects to use the full range of esm import abilities.
 - Dramatically increase program performance with easy parallelism!
