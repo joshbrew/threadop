@@ -1,6 +1,7 @@
 ## threadop
 
 `npm i threadop`
+
 ![threadop-status](https://img.shields.io/npm/v/threadop.svg) 
 ![threadop-downloads](https://img.shields.io/npm/dt/threadop.svg)
 ![threadop-l](https://img.shields.io/npm/l/threadop)
