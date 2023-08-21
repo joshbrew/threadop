@@ -1,0 +1,518 @@
+<html>
+    <head></head>
+    <body>
+        Press F12 or Right Click + Inspect to view results
+        <script type="module">
+
+            import "./num.min.js"
+    
+            console.log('numjs, main thread', nj)
+            
+            /*
+            type ModuleImport = {
+                [modulePath: string]: 
+                | string   // Default import e.g. 'React'
+                | boolean  // Only import module without named imports
+                | {       // Named imports
+                    [importName: string]: string | boolean;  // e.g. { useState: true, useEffect: 'useEff' }
+                };
+            };
+    
+            type ImportsInput = 
+                | string             // Single import e.g. './module.js'
+                | string[]           // Multiple imports e.g. ['./mod1.js', './mod2.js']
+                | ModuleImport;      // Object describing imports e.g. { './mod.js': { useState: true } }
+            */
+    
+    
+    /*
+        Overview of threadOp:
+        threadOp is a utility function that simplifies working with Web Workers in JavaScript. It allows you to:
+    
+        Run code off the main thread: By sending functions and data to a Web Worker, you can perform tasks without blocking 
+        the main thread. This is especially useful for heavy computational tasks.
+        Sequentially process data: By retaining a handle to the worker (e.g., workerHelper), you can send multiple pieces of 
+        data sequentially for processing.
+        Chain multiple workers: Establish communication between two or more workers, allowing you to create a pipeline of operations.
+        Load external libraries/modules: Bring in additional scripts or libraries into the worker context for more complex operations.
+        Remember that Web Workers run in a different context than the main thread. This means they don't have access to the DOM, 
+        and they run in parallel to the main thread, allowing for concurrent operations.
+    
+    */
+    
+            function threadOp(
+                callback = (data) => data, 
+                { 
+                    imports, //ImportsInput
+                    message, 
+                    transfer, 
+                    port, 
+                    blocking 
+                } = {}) {
+                return new Promise((resolve, reject) => {
+                    let id = Math.random();
+    
+                    // Inner function that will run inside the worker
+                    const workerFn = () => {
+    
+                        console.log('thread!');
+    
+                        const sendData = (data, cb) => {
+                            if (globalThis.SENDERS) { //forward to message ports instead of to main thread
+                                for(const key in globalThis.SENDERS) {
+                                    if(globalThis.BLOCKING[key]) {
+                                        if(globalThis.BLOCKED[key]) {
+                                            console.error("Thread Blocked: " + key);
+                                            continue;
+                                        }
+                                        globalThis.BLOCKED[key] = true;
+                                    }
+                                    globalThis.SENDERS[key].postMessage({message:data, cb})
+                                }
+                            } else {
+                                postMessage({message:data, cb});
+                            }
+                        }
+    
+                        const onData = (ev, RECEIVER) => {
+                            let result = (()=>{})(ev.data.message);
+                            
+                            if (result?.then) {
+                                result.then((resolvedData) => {
+                                    if(RECEIVER) {
+                                        //console.log("sending back to SENDER", true);
+                                        RECEIVER.postMessage(true);
+                                    }
+                                    sendData(resolvedData, ev.data.cb);
+                                });
+                            } else {
+                                if(RECEIVER) {
+                                    //console.log("sending back to SENDER", true);
+                                    RECEIVER.postMessage(true);
+                                }
+                                sendData(result, ev.data.cb);
+                            }
+                        };
+    
+                        globalThis.onmessage = (ev) => {
+                            // Handle different types of messages: RECEIVER, SENDER, TERMINATED, or data
+                            if(ev.data?.RECEIVER) {
+                                const blocking = ev.data.blocking;
+                                if(!globalThis.RECEIVERS) {
+                                    globalThis.RTCR = 0;
+                                    globalThis.RECEIVERS = {};
+                                }
+                                const _id = ev.data.id;
+                                globalThis.RECEIVERS[_id] = ev.data.RECEIVER;
+                                globalThis.RTCR++;
+    
+                                ev.data.RECEIVER.onmessage = (event) => {
+                                    onData(event, blocking ? ev.data.RECEIVER : undefined);
+                                }
+    
+                                ev.data.RECEIVER.onerror = (er) => {
+                                    delete globalThis.RECEIVER[_id];
+                                }
+                            } else if(ev.data?.SENDER) {
+                                if(!globalThis.SENDERS) {
+                                    globalThis.PCTR = 0;
+                                    globalThis.SENDERS = {};
+                                    globalThis.BLOCKING = {};
+                                    globalThis.BLOCKED = {};
+                                }
+                                const blocking = ev.data.blocking;
+                                const _id = ev.data.id ? ev.data.id : globalThis.PCTR;
+                                globalThis.SENDERS[_id] = ev.data.SENDER;
+                                globalThis.PCTR++;
+    
+                                if(blocking) globalThis.BLOCKING[_id] = true;
+    
+                                ev.data.SENDER.onmessage = (event) => { 
+                                    //console.log('RECEIVER sent back', event.data);
+                                    if(globalThis.BLOCKING[_id]) {
+                                        globalThis.BLOCKED[_id] = false; 
+                                        //console.log('unblocked')
+                                    }
+                                }
+    
+                                ev.data.SENDER.onerror = (er) => {
+                                    delete globalThis.SENDERS[_id];
+                                }
+                            } else if (ev.data?.DELETED) {
+                                delete globalThis.RECEIVERS?.[ev.data.DELETED];
+                                delete globalThis.SENDERS?.[ev.data.DELETED];
+                            } else {
+                                onData(ev);
+                            }
+                        };
+    
+                        globalThis.onerror = (er) => { console.error(er); }
+                    }
+    
+                    // Convert the worker function to a string, including imports
+                    let workerFnString = workerFn.toString().replace('()=>{}', callback.toString());
+                    let importString = getImports(imports);
+    
+                    console.log(importString);
+    
+                    let workerString = `${importString}\n(${workerFnString})()`;
+    
+                    // Create the worker
+                    const blob = new Blob([workerString], { type: 'application/javascript' });
+                    const workerURL = URL.createObjectURL(blob);
+                    const worker = new Worker(workerURL, imports ? { type: "module" } : undefined);
+    
+                    // Otherwise, set up any provided ports and return a control object
+                    if (port) {
+                        setupPort(worker, port, id, blocking);
+                    }
+    
+                    // If a one-off message is provided, post it to the worker and set up the handlers, then terminate after the response is met
+                    if (message) {
+                        worker.onmessage = (ev) => {
+                            Promise.resolve().then(() => {//async
+                                worker.terminate();
+                                URL.revokeObjectURL(workerURL);
+                            })
+                            resolve(ev.data.message);
+                        };
+    
+                        worker.onerror = (ev) => {
+                            Promise.resolve().then(() => {//async
+                                worker.terminate();
+                                URL.revokeObjectURL(workerURL);
+                            })
+                            reject(new Error("Worker encountered an error: " + ev.message));
+                        };
+    
+                        worker.postMessage({message}, transfer);
+    
+                    } else {
+    
+                        let callbacks = {};
+                        let blocked = false; //will prevent running if a thread is blocked
+    
+                        worker.onmessage = (ev) => {
+                            for(const key in callbacks) {callbacks[key](ev.data.message, ev.data.cb);}
+                        }
+                        
+                        worker.onerror = (ev) => {
+                            console.error(new Error("Worker encountered an error: " + ev.message));
+                        };
+    
+                        let mkcb = (message, transfer) => {
+                            return new Promise((res,rej) => {
+                                if(worker.PORTS) {
+                                    worker.postMessage({message}, transfer);
+                                    res(true);
+                                } else {
+                                    if(blocking) {
+                                        if(blocked) return new Promise((res,rej) => { rej("Thread Blocked") });
+                                        blocked = true;
+                                    }
+                                    let cb = Math.random();
+                                    callbacks[cb] = (data, c) => { 
+                                        if(cb === c) {
+                                            delete callbacks[cb]; 
+                                            if(blocking) blocked = false; 
+                                            res(data); 
+                                        }
+                                    }
+                                    worker.postMessage({message, cb}, transfer);
+                                }
+                            });
+                        }
+    
+                        const helper = {
+                            run: (message, transfer) => { //return a promise, will return data if a thread operation 
+                                return mkcb(message,transfer);
+                            },
+                            terminate: () => {
+                                URL.revokeObjectURL(workerURL); // This line is important for garbage collection even if you reuse the worker
+                                worker.terminate();
+                                if(worker.PORTS) {
+                                    let withPort = (p,i) => {
+                                        p.postMessage({DELETED:id})
+                                    }
+                                    worker.PORTS.forEach(withPort)
+                                }
+                            },
+                            addPort: (port) => setupPort(worker, port, id, blocking), //add a message port to send data to a second worker instead of to main thread, can send to multiple 
+                            addCallback:(callback=(data)=> {}, oneOff) => { //response to worker data
+                                let cb = Math.random(); 
+                                callbacks[cb] = oneOff ? (data) => { 
+                                    callback(data); delete callbacks[cb];
+                                } : callback;
+                                return cb;
+                            },
+                            removeCallback:(cb) => {
+                                delete helper.callbacks[cb];
+                            },
+                            worker,
+                            callbacks
+                        }
+    
+                        resolve(helper);
+                    }
+                });
+            }
+    
+            /**
+             * 
+                If imports is a string that doesn't include the word 'import', the function returns it formatted as an import statement.
+                If it does include 'import', it's returned as is.
+                Also, any occurrence of './' in the string will be replaced by the website's origin (base URL).
+                Array:
+    
+                If imports is an array, each string inside is processed similarly to the string case, and the results are joined together.
+                Object:
+    
+                If imports is an object, it's meant to represent named imports or default imports from modules.
+                Each key in the object is the path or URL of a module. Like in previous cases, './' will be replaced by the website's origin.
+                The value associated with each key can be:
+                A string: Represents the default import from the module.
+                A boolean: If true, represents importing the module without any named imports.
+                An object: Represents named imports from the module. Each key in this nested object is the name of an import from the module, and its associated value can be:
+                A string: An alias for the import.
+                A boolean: If true, the import is used as-is without aliasing.
+             * 
+             */
+            //The purpose of the function is to create ESM import statements based on the provided imports.
+            function getImports(imports) {
+                // Handle different formats for the imports option
+
+                let pname = location.pathname.split('/');
+                pname.pop();
+                let relpath = location.origin + pname.join('/') + '/'; 
+                if (typeof imports === 'string') {
+                    if(imports.startsWith('./')) imports = relpath + imports;
+                    return imports.includes('import') ? `${imports}` : `import '${imports}';`;
+                } else if (Array.isArray(imports)) {
+                    return imports.map((v) => { 
+                        if(v.startsWith('./')) v = relpath + v;
+                        if(!v.includes('import')) return `import '${v}';`; 
+                        else return v; 
+                    }).join('\n');
+                } else if (typeof imports === 'object') {
+                    let lines = Object.entries(imports).map(([key, value]) => {
+                        if(key.startsWith('./')) key = relpath + key;
+                        if (typeof value === 'string') {
+                            return `import ${value} from '${key}';`;
+                        } else if (typeof value === 'boolean' && value) {
+                            return `import '${key}'`;
+                        } else {
+                            const namedImports = Object.entries(value).map(([importName, alias]) => {
+                                return typeof alias === 'string' ? `${importName} as ${alias}` : importName;
+                            }).join(', ');
+                            return `import { ${namedImports} } from '${key}';`;
+                        }
+                    });
+                    return lines.join('\n') + '';
+                }
+                return '';
+            }
+    
+    
+    
+            function setupPort(worker, port, id, blocking) {
+                const channel = new MessageChannel();
+                worker.postMessage({ SENDER: channel.port1, id, blocking }, [channel.port1]);
+                port.postMessage({ RECEIVER: channel.port2, id, blocking }, [channel.port2]);	
+                
+                if(!worker.PORTS) worker.PORTS = [];
+                worker.PORTS.push(port);
+                if(!port.PORTS) port.PORTS = [];
+                port.PORTS.push(worker);
+            }
+    
+            //-----------------------------------------------------------------------------------
+    
+    
+    
+    
+    
+    
+            //Example 1: One-off usage
+            /*
+                This is the simplest usage of threadOp.
+    
+                You have a function, workerFunction, that you want to run in a separate thread (i.e., Web Worker).
+                You send a single piece of data (5) to this worker, the worker multiplies this data by 2, and sends the result 
+                (10) back to the main thread.
+                The function is executed once and the worker terminates after this.
+                        
+            */
+    
+            //Define a function to run in the worker
+            const workerFunction = data => {
+                // Perform some operation on the data
+                console.log('Example 1: input', data);
+                return data * 2;
+            };
+    
+            // Run the function with the threadOp
+            threadOp(workerFunction, {
+                message: 5, // Sending a one-off message
+            }).then(result => {
+                console.log('Example 1: result', result); // Expected: 10
+            }).catch(error => {
+                console.error('Example 1: error',error);
+            });
+    
+    
+    
+    
+    
+    
+    
+    
+            //Example 2: repeat operations
+    
+            /*
+                This is an example of how to run multiple operations sequentially in a worker.
+    
+                You initialize the worker with a function (workerFunction2) using threadOp.
+                Once the worker is ready, you send it multiple pieces of data sequentially. Each piece of data is processed independently.
+                After all operations, the worker is terminated explicitly using the workerHelper.terminate() method. This is 
+                important to ensure that we don't have lingering worker threads.
+            
+            */
+    
+            const workerFunction2 = data => {
+                console.log('Example 2: input', data);
+                return data * 2;
+            };
+    
+            threadOp(workerFunction2).then(workerHelper => {
+                workerHelper.run(5).then(r1 => {
+                    console.log('Example 2: r1', r1); // Expected: 10
+                });
+    
+                
+                workerHelper.run(10).then(r2 => {
+                    console.log('Example 2: r2', r2); // Expected: 20
+                    workerHelper.terminate(); // Terminate the worker after you're done with it.
+                });
+    
+            }).catch(error => {
+                console.error('Example 2: error', error);
+            });
+    
+    
+    
+    
+    
+    
+    
+    
+            //Example 3: Chaining workers
+            /*
+                This example demonstrates how to chain two workers, meaning the output of one worker (workerFunctionA) is used 
+                as the input for another worker (workerFunctionB).
+    
+                Both workers are initialized independently.
+                A message port is set up between the two workers for chained communication.
+                The first worker (workerFunctionA) processes the data and sends its result to the second worker (workerFunctionB), 
+                which processes the result further.
+                Both workers are terminated after processing, ensuring that no worker threads remain active.
+            
+            */
+    
+            const workerFunctionA = data => {
+                console.log('Example 3: A input', data);
+                return data * 2;
+            };
+    
+            const workerFunctionB = data => {
+                console.log('Example 3: B input', data);
+                return data + 3;
+            };
+    
+            // Initialize first worker
+            threadOp(workerFunctionA, {
+                blocking: true,
+            }).then(workerHelperA => {
+            
+                // Initialize second worker and set up message port for chained communication
+                threadOp(workerFunctionB).then(workerHelperB => {
+                    workerHelperA.addPort(workerHelperB.worker);
+    
+                    let ctr = 0;
+                    workerHelperB.addCallback(result => {
+                        console.log('Chain workerHelperB result', result); // Result from the chained worker operation                
+                        ctr++;
+                        if(ctr === 2) {
+                            workerHelperA.terminate();
+                            workerHelperB.terminate();
+                        }
+                        workerHelperA.run(10);
+                    });
+    
+                    workerHelperA.run(5).then(result => {
+                        console.log('Chain workerHelperA result', result); // Result from the chained worker operation
+                    });
+    
+                    workerHelperA.run(5) //Blocked!
+                });
+    
+            }).catch(error => {
+                console.error(error);
+            });
+    
+    
+    
+            //Example 4: using imports
+            /*
+            
+                This is about loading and using external libraries/modules within the worker.
+    
+                You want to perform some operations on data using the numjs library. So, before running the worker, 
+                you specify that this library should be imported.
+                The imports option in threadOp allows you to specify which external scripts or libraries the worker 
+                should load before it begins execution.
+                The data is then sent to the worker, processed using the numjs functions, and the result is returned.
+    
+            */
+    
+            const computeMean = data => {
+                const nj = globalThis.nj;  // numjs is attached to globalThis within the worker context
+                let ndarray = nj.array(data);
+                return nj.mean(ndarray);
+            };
+    
+            // Sample data
+            const data = [1, 2, 3, 4, 5];
+    
+            threadOp(computeMean, {
+                imports: './num.min.js', //['./num.min.js'] //or { './num.min.js':true } //use objects to get more fine grained, e.g. for a import url pass an object with specific module methods and alias strings or bools
+                message: data
+            }).then(result => {
+                console.log('Example 4: Mean:', result);
+            }).catch(error => {
+                console.error('Example 4: Error:', error);
+            });
+    
+    
+            //example 5, web import with a specified library function
+            
+            const lodashop = data => {
+                //const nj = globalThis.nj;  // numjs is attached to globalThis within the worker context
+                return data.map(snakeCase)
+            };
+    
+            // Sample data
+            const lodata = ['HelloWorld', 'left pad', 'ECMAScript'];
+    
+            threadOp(lodashop, {
+                imports: {[`https://cdn.skypack.dev/lodash@4`]:{snakeCase :true}}, //['./num.min.js'] //or { './num.min.js':true } //use objects to get more fine grained, e.g. for a import url pass an object with specific module methods and alias strings or bools
+                message: lodata
+            }).then(result => {
+                console.log('Example 5: Snake Case result:', result);
+            }).catch(error => {
+                console.error('Example 5: Error:', error);
+            });
+    
+        </script>
+    </body>
+    
+</html>
