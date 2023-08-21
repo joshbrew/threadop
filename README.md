@@ -14,7 +14,7 @@ Create multithreaded pipelines (with esm imports) in a single script file with a
 - One-off or repeat use with easy cleanup.
 - Chain multiple workers with message port automation
 - Specify imports (local or remote) from strings or objects to use the full range of esm import abilities.
-- Dramatically increase program performance with easy parallelism!
+- Dramatically increase program performance with easy parallelism! The time to instantiate a basic worker is ~0.1ms 
 
 Import `threadop` as a default import 
 
