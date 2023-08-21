@@ -18,7 +18,7 @@ Create multithreaded pipelines (with esm imports) in a single script file with a
 
 Import `threadop` as a default import 
 
-`import threadop from 'threadop` 
+`import threadop from 'threadop'` 
 
 Or as a method 
 
