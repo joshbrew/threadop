@@ -16,7 +16,7 @@ Create multithreaded pipelines (with esm imports) in a single script file with a
 - Specify imports (local or remote) from strings or objects to use the full range of esm import abilities.
 - Dramatically increase program performance with easy parallelism!
 
-Import `threadop` as the default import 
+Import `threadop` as a default import 
 
 `import threadop from 'threadop` 
 
@@ -31,6 +31,59 @@ Or access it as a global variable
     let thread = threadop(data => {return data*2}); //globalThis.threadop
     thread.run(5).then(console.log);
 </script>
+```
+
+## Inputs
+
+```ts
+type ModuleImport = {
+    [modulePath: string]: 
+    | string   // Default import e.g. 'React'
+    | boolean  // Only import module without named imports
+    | {       // Named imports
+        [importName: string]: string | boolean;  // e.g. { useState: true, useEffect: 'useEff' }
+    };
+};
+
+type ImportsInput = 
+    | string             // Single import e.g. './module.js'
+    | string[]           // Multiple imports e.g. ['./mod1.js', './mod2.js']
+    | ModuleImport;      // Object describing imports e.g. { './mod.js': { useState: true } }
+
+type WorkerHelper = {
+    run: (message: any, transfer?: Transferable[]) => Promise<any>;
+    terminate: () => void;
+    addPort: (port: Worker) => void;
+    addCallback: (callback?: (data: any) => void, oneOff?: boolean) => number;
+    removeCallback: (cb: number) => void;
+    worker: Worker;
+    callbacks: {[key: number]: (data: any, cb?: number) => void};
+}
+
+// If we provide a message, we get a result back and terminate the worker automatically
+function threadop(
+    callback?: (data: any) => any, 
+    options?: {
+        imports?: ImportsInput, 
+        message: any, 
+        transfer?: Transferable[], 
+        port?: Worker, 
+        blocking?: boolean 
+    }
+): Promise<any>;
+
+// When the message isn't defined, the function returns a Promise<WorkerHelper>.
+function threadop(
+    callback?: (data: any) => any, 
+    options?: {
+        imports?: ImportsInput, 
+        transfer?: Transferable[], 
+        port?: Worker, 
+        blocking?: boolean 
+    }
+): Promise<WorkerHelper>;
+
+
 ```
 
 ## Examples
