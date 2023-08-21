@@ -248,7 +248,6 @@ There is also a subfolder called `example/npmproject` that you can run following
 
 ```js   
     const lodashop = data => {
-        //const nj = globalThis.nj;  // numjs is attached to globalThis within the worker context
         return data.map(snakeCase)
     };
 
