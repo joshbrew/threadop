@@ -135,14 +135,14 @@ threadop(workerFunctionA, {
                 workerHelperA.terminate();
                 workerHelperB.terminate();
             }
-            workerHelperA.run(10);
+            //workerHelperA.run(10);
         });
 
         workerHelperA.run(5).then(result => {
             console.log('Chain workerHelperA result', result); // Result from the chained worker operation
         });
 
-        workerHelperA.run(5) //Blocked!
+        //workerHelperA.run(15) //Blocked!
     });
 
 }).catch(error => {
@@ -251,7 +251,7 @@ const reverseOperation = encodedData => {
     return {reversed, input:encodedData.input};
 }
   
-// First threadpool to encode the strings. Second to reverse. This is best for async batch processes while you need to implement 
+//First threadpool to encode the strings. Second to reverse. This is best for async batch processes while you need to implement 
 //something to re-collect results if trying to break up a single problem 
 threadop(reverseOperation, {
     pool: poolinput.length
@@ -270,7 +270,9 @@ threadop(reverseOperation, {
                 });//we're sorting because pool1 responds asynchronously and we need to check the output order if it's important for the problem
                 console.log('Example 7: threadpool chain output', sortedOutput, "\nRe-decoded:", sortedOutput.map((v)=>{return atob(v.split("").reverse().join(""));}))// sortedOutput.map(atob));
                 pool1.terminate();
+                res(sortedOutput);
             }
+            
         });
 
         console.log("Example 7: threadpool chain input", poolinput);
@@ -282,14 +284,109 @@ threadop(reverseOperation, {
             message: poolinput,
             port: Object.values(pool1.workers)
         });
-    })
+    });
     
-
 }).catch(error => {
     console.error('Example 7: Error:', error);
 }); //should pass the result to pool1
 
 
+
+
+
+// Example 8: Looping
+
+threadop(
+    (data) => `Processed ${data}, ${new Date().toLocaleString()}`,
+    {
+        message:"ABC123",
+        loop:1000,
+        callback:(data) => {console.log(data)},
+    }
+).then((helper) => {
+    setTimeout(() => {helper.stop()},5000);
+});
+
+
+
+
+
+//Example 9: Animation
+
+const canvas = document.createElement('canvas');
+canvas.width = 800;
+canvas.height = 600;
+
+canvas.style.width = '100%';
+canvas.style.height = '100%';
+canvas.style.position = 'absolute';
+document.body.appendChild(canvas);
+
+const offscreen = canvas.transferControlToOffscreen();
+//document.body.appendChild(canvas);
+
+threadop(
+    (data) => {
+        if(data.canvas && !self.canvas) { //setup
+            const canvas = data.canvas;
+            const ctx = data.canvas.getContext("2d");
+            self.canvas = canvas;
+            self.ctx = ctx;
+
+            let gradientColors = [
+                'red', 'orange', 'yellow', 'green', 'blue', 'indigo', 'violet'
+            ];
+            
+            let offset = 0;
+
+            self.drawWave = () => {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+                // Create gradient
+                let gradient = ctx.createLinearGradient(0, canvas.height / 2,  canvas.width, canvas.height / 2);
+                gradientColors.forEach((color, index) => {
+                    gradient.addColorStop(index / (gradientColors.length - 1), color);
+                });
+            
+                ctx.fillStyle = gradient;
+                
+                const waveHeight = 100;
+                const waveLength = 0.01;
+                const speed = 0.04;
+            
+                ctx.beginPath();
+            
+                for(let x = 0; x <  canvas.width; x++) {
+                    let y =  canvas.height / 2 + waveHeight * Math.sin(waveLength * x + offset);
+                    ctx.lineTo(x, y);
+                }
+            
+                ctx.lineTo(canvas.width, canvas.height);
+                ctx.lineTo(0, canvas.height);
+                ctx.closePath();
+            
+                ctx.fill();
+
+                offset -= speed;
+            }
+        } else if(data.width && self.canvas?.width !== data.width) {
+            console.log("resized!");
+            self.canvas.width = data.width;
+            self.canvas.height = data.height;
+        }
+
+        self.drawWave();
+    },
+    {
+        animate:true,
+        message:{canvas:offscreen},
+        transfer:[offscreen]
+    }
+).then((helper) => {
+    window.onresize = (ev) => {
+        helper.setAnimation({width:window.innerWidth, height:window.innerHeight});
+    }
+});
 
 
 

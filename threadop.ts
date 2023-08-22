@@ -18,6 +18,9 @@ export type WorkerHelper = {
     addPort: (port: Worker) => void;
     addCallback: (callback?: (data: any) => void, oneOff?: boolean) => number;
     removeCallback: (cb: number) => void;
+    setLoop: (interval, message, transfer) => void, //can provide arguments to send results on loop
+    setAnimation: (message, transfer) => void,      //run an animation function, e.g. transfer a canvas with parameters
+    stop: () => void, 
     worker: Worker;
     callbacks: {[key: number]: (data: any, cb?: number) => void};
 }
@@ -29,6 +32,9 @@ export type WorkerPoolHelper = {
     addCallback: (callback?: (data: any) => void, oneOff?: boolean, workerId?:number|string) => number|number[];
     removeCallback: (cb: number, workerId?:number|string) => void;
     addWorker:() => number;
+    setLoop: (interval, message, transfer, workerId?:number|string) => void, //provide arguments and run a function/send results on loop
+    setAnimation: (message, transfer, workerId?:number|string) => void, //run an animation function, e.g. transfer a canvas with parameters, or transmit results on a framerate-limited loop
+    stop: (workerId?:number|string) => void, 
     workers: {[key:string]:Worker};
     helpers: {[key:string]:WorkerHelper};
     keys: string[],
@@ -37,49 +43,61 @@ export type WorkerPoolHelper = {
 //overloads
 // When the message is defined, the function returns a Promise<any>.
 export function threadop(
-    callback?: (data: any) => any, 
+    operation?: (data: any) => any, 
     options?: {
         imports?: ImportsInput, 
         message: any, 
         transfer?: Transferable[], 
         port?: Worker|Worker[], 
         blocking?: boolean,
+        loop?:number,
+        animate?:boolean,
+        callback?:(data) => void
     }
 ): Promise<any>;
 
-// When the message is defined, the function returns a Promise<any>.
+// When the message is defined and pool is defined, the function returns a Promise<any[]>.
 export function threadop(
-    callback?: (data: any) => any, 
+    operation?: (data: any) => any, 
     options?: {
         imports?: ImportsInput, 
-        message: any|any[], 
+        message: any|any[], //array inputs interpreted as per-thread inputs, can be longer than the number of threads
         transfer?: Transferable[], 
         port?: Worker|Worker[], 
         blocking?: boolean,
-        pool:number
+        pool:number,
+        loop?:number,
+        animate?:boolean,
+        callback?:(data) => void
     }
 ): Promise<any[]>;
 
 // When the message isn't defined, the function returns a Promise<WorkerHelper>.
 export function threadop(
-    callback?: (data: any) => any, 
-    options?: {
-        imports?: ImportsInput, 
-        transfer?: Transferable[], 
-        port?: Worker|Worker[], 
-        blocking?: boolean
-    }
-): Promise<WorkerHelper>;
-
-// When the message isn't defined, the function returns a Promise<WorkerHelper>.
-export function threadop(
-    callback?: (data: any) => any, 
+    operation?: (data: any) => any, 
     options?: {
         imports?: ImportsInput, 
         transfer?: Transferable[], 
         port?: Worker|Worker[], 
         blocking?: boolean,
-        pool:number
+        loop?:number,
+        animate?:boolean,
+        callback?:(data) => void
+    }
+): Promise<WorkerHelper>;
+
+// When the message isn't defined and pool is defined, the function returns a Promise<WorkerPoolHelper>.
+export function threadop(
+    operation?: (data: any) => any, 
+    options?: {
+        imports?: ImportsInput, 
+        transfer?: Transferable[], 
+        port?: Worker|Worker[], 
+        blocking?: boolean,
+        pool:number,
+        loop?:number,
+        animate?:boolean,
+        callback?:(data) => void
     }
 ): Promise<WorkerPoolHelper>;
 
@@ -87,21 +105,27 @@ export function threadop(
 //implementation
 
 export function threadop(
-    callback = (data) => data, 
+    operation = (data) => data, 
     { 
         imports, //ImportsInput
         message, 
         transfer, 
         port, 
         blocking,
-        pool
+        pool,
+        loop,
+        animate,
+        callback
     }:{
         imports?:ImportsInput, //ImportsInput
         message?:any, 
         transfer?:Transferable[], 
         port?:Worker|Worker[], 
         blocking?:boolean,
-        pool?:number
+        pool?:number,
+        loop?:number, //loop the function on a millisecond interval
+        animate?:boolean, //loop the function on an animation frame,
+        callback?:(data) => void
     } = {} as any
 ): Promise<any | WorkerHelper>  {
     return new Promise((resolve, reject) => {
@@ -110,18 +134,20 @@ export function threadop(
         const workerFn = () => {
 
             //console.log('thread!');
+            globalThis.WORKER = {};
 
-            const sendData = (data:any, cb:number) => {
-                if (globalThis.SENDERS) { //forward to message ports instead of to main thread
-                    for(const key in globalThis.SENDERS) {
-                        if(globalThis.BLOCKING[key]) {
-                            if(globalThis.BLOCKED[key]) {
+            const sendData = (data:any, cb:number, oneOff:boolean) => {
+                if (globalThis.WORKER.SENDERS) { //forward to message ports instead of to main thread
+                    for(const key in globalThis.WORKER.SENDERS) {
+                        if(globalThis.WORKER.BLOCKING[key]) {
+                            if(globalThis.WORKER.BLOCKED[key]) {
                                 console.error("Thread Blocked: " + key);
                                 continue;
                             }
-                            globalThis.BLOCKED[key] = true;
+                            globalThis.WORKER.BLOCKED[key] = true;
                         }
-                        globalThis.SENDERS[key].postMessage({message:data, cb})
+                        globalThis.WORKER.SENDERS[key].postMessage({message:data, cb});
+                        if(oneOff) postMessage(true); //need to tell main thread to quit
                     }
                 } else {
                     postMessage({message:data, cb});
@@ -138,66 +164,88 @@ export function threadop(
                             //console.log("sending back to SENDER", true);
                             RECEIVER.postMessage(true);
                         }
-                        sendData(resolvedData, ev.data.cb);
+                        sendData(resolvedData, ev.data.cb, ev.data.oneOff);
                     });
                 } else {
                     if(RECEIVER) {
                         //console.log("sending back to SENDER", true);
                         RECEIVER.postMessage(true);
                     }
-                    sendData(result, ev.data.cb);
+                    sendData(result, ev.data.cb, ev.data.oneOff);
                 }
-
-                if(ev.data.oneOff && globalThis.SENDERS) postMessage(true); //need to tell main thread to quit
             };
 
             globalThis.onmessage = (ev) => {
                 // Handle different types of messages: RECEIVER, SENDER, TERMINATED, or data
-                if(ev.data?.RECEIVER) {
-                    const blocking = ev.data.blocking;
-                    if(!globalThis.RECEIVERS) {
-                        globalThis.RTCR = 0;
-                        globalThis.RECEIVERS = {} as {[key:string]:MessagePort};
-                    }
-                    const _id = ev.data.id;
-                    globalThis.RECEIVERS[_id] = ev.data.RECEIVER;
-                    globalThis.RTCR++;
-
-                    ev.data.RECEIVER.onmessage = (event) => {
-                        onData(event, blocking ? ev.data.RECEIVER : undefined);
-                    }
-
-                    ev.data.RECEIVER.onerror = (er) => {
-                        delete globalThis.RECEIVER[_id];
-                    }
-                } else if(ev.data?.SENDER) {
-                    if(!globalThis.SENDERS) {
-                        globalThis.PCTR = 0;
-                        globalThis.SENDERS = {};
-                        globalThis.BLOCKING = {};
-                        globalThis.BLOCKED = {};
-                    }
-                    const blocking = ev.data.blocking;
-                    const _id = ev.data.id ? ev.data.id : globalThis.PCTR;
-                    globalThis.SENDERS[_id] = ev.data.SENDER;
-                    globalThis.PCTR++;
-
-                    if(blocking) globalThis.BLOCKING[_id] = true;
-
-                    ev.data.SENDER.onmessage = (event) => { 
-                        //console.log('RECEIVER sent back', event.data);
-                        if(globalThis.BLOCKING[_id]) {
-                            globalThis.BLOCKED[_id] = false; 
-                            //console.log('unblocked')
+                
+                if(ev.data?.COMMAND) { //process commands for the worker system
+                    const cmd = ev.data.COMMAND;
+                    if(typeof cmd.SETLOOP === 'number') {
+                        if(globalThis.WORKER.LOOP) clearTimeout(globalThis.WORKER.LOOP);
+                        const loop = () => {
+                            onData(ev); globalThis.WORKER.LOOP = setTimeout(() => { loop(); }, cmd.SETLOOP);
                         }
+                        loop();
                     }
-
-                    ev.data.SENDER.onerror = (er) => {
-                        delete globalThis.SENDERS[_id];
+                    if(cmd.SETANIM) {
+                        if(globalThis.WORKER.ANIM) cancelAnimationFrame(globalThis.WORKER.ANIM);
+                        const animate = () => {
+                            onData(ev); globalThis.WORKER.ANIM = requestAnimationFrame(() => { animate(); });
+                        }
+                        animate();
                     }
-                } else if (ev.data?.DELETED) {
-                    delete globalThis.RECEIVERS?.[ev.data.DELETED];
-                    delete globalThis.SENDERS?.[ev.data.DELETED];
+                    if(cmd.STOP) {
+                        if(globalThis.WORKER.LOOP) clearTimeout(globalThis.WORKER.LOOP);
+                        if(globalThis.WORKER.ANIM) cancelAnimationFrame(globalThis.WORKER.ANIM);
+                    }
+                    if(cmd.RECEIVER) {
+                        const blocking = cmd.blocking;
+                        if(!globalThis.WORKER.RECEIVERS) {
+                            globalThis.WORKER.RTCR = 0;
+                            globalThis.WORKER.RECEIVERS = {} as {[key:string]:MessagePort};
+                        }
+                        const _id = cmd.id;
+                        globalThis.WORKER.RECEIVERS[_id] = cmd.RECEIVER;
+                        globalThis.WORKER.RTCR++;
+    
+                        cmd.RECEIVER.onmessage = (event) => {
+                            onData(event, blocking ? cmd.RECEIVER : undefined);
+                        }
+    
+                        cmd.RECEIVER.onerror = (er) => {
+                            delete globalThis.WORKER.RECEIVERS[_id];
+                        }
+                    } 
+                    if(cmd.SENDER) {
+                        if(!globalThis.WORKER.SENDERS) {
+                            globalThis.WORKER.PCTR = 0;
+                            globalThis.WORKER.SENDERS = {};
+                            globalThis.WORKER.BLOCKING = {};
+                            globalThis.WORKER.BLOCKED = {};
+                        }
+                        const blocking = cmd.blocking;
+                        const _id = cmd.id ? cmd.id : globalThis.WORKER.PCTR;
+                        globalThis.WORKER.SENDERS[_id] = cmd.SENDER;
+                        globalThis.WORKER.PCTR++;
+    
+                        if(blocking) globalThis.WORKER.BLOCKING[_id] = true;
+    
+                        cmd.SENDER.onmessage = (event) => { 
+                            //console.log('RECEIVER sent back', event.data);
+                            if(globalThis.WORKER.BLOCKING[_id]) {
+                                globalThis.WORKER.BLOCKED[_id] = false; 
+                                //console.log('unblocked')
+                            }
+                        }
+    
+                        cmd.SENDER.onerror = (er) => {
+                            delete globalThis.WORKER.SENDERS[_id];
+                        }
+                    }  
+                    if (cmd.DELETED) {
+                        delete globalThis.WORKER.RECEIVERS?.[cmd.DELETED];
+                        delete globalThis.WORKER.SENDERS?.[cmd.DELETED];
+                    } 
                 } else {
                     onData(ev);
                 }
@@ -207,7 +255,7 @@ export function threadop(
         }
 
         // Convert the worker function to a string, including imports
-        let workerFnString = workerFn.toString().replace('()=>{}', callback.toString());
+        let workerFnString = workerFn.toString().replace('()=>{}', operation.toString());
         let importString = getImports(imports);
 
         //console.log(importString);
@@ -217,6 +265,91 @@ export function threadop(
         // Create the worker
         const blob = new Blob([workerString], { type: 'application/javascript' });
         const workerURL = URL.createObjectURL(blob);
+
+        const WorkerHelper = (worker) => {
+
+            let callbacks = {};
+            let blocked = false; //will prevent running if a thread is blocked
+
+            worker.onmessage = (ev) => {
+                for(const key in callbacks) {callbacks[key](ev.data.message, ev.data.cb);}
+            }
+            
+            worker.onerror = (ev) => {
+                console.error(new Error("Worker encountered an error: " + ev.message));
+            };
+
+            let mkcb = (msg, tx) => {
+                return new Promise((res,rej) => {
+                    if((worker as any).PORTS) {
+                        worker.postMessage({message:msg}, tx);
+                        res(true);
+                    } else {
+                        if(blocking) {
+                            if(blocked) return new Promise((res,rej) => { rej("Thread Blocked") });
+                            blocked = true;
+                        }
+                        let cb = Math.random();
+                        callbacks[cb] = (data, c) => { 
+                            if(cb === c) {
+                                delete callbacks[cb]; 
+                                if(blocking) blocked = false; 
+                                res(data); 
+                            }
+                        }
+                        worker.postMessage({message:msg, cb}, tx);
+                    }
+                });
+            }
+
+            const helper = {
+                run: (message, transfer) => { //return a promise, will return data if a thread operation 
+                    return mkcb(message,transfer);
+                },
+                terminate: () => {
+                    URL.revokeObjectURL(workerURL); // This line is important for garbage collection even if you reuse the worker
+                    worker.terminate();
+                    if((worker as any).PORTS) {
+                        let withPort = (p,i) => {
+                            p.postMessage({COMMAND:{DELETED:(worker as any).id}})
+                        }
+                        (worker as any).PORTS.forEach(withPort)
+                    }
+                },
+                addPort: (port) => setupPort(worker, port, (worker as any).id, blocking), //add a message port to send data to a second worker instead of to main thread, can send to multiple 
+                addCallback:(callback=(data)=> {}, oneOff) => { //response to worker data
+                    let cb = Math.random(); 
+                    callbacks[cb] = oneOff ? (data) => { 
+                        callback(data); delete callbacks[cb];
+                    } : callback;
+                    return cb;
+                },
+                removeCallback:(cb) => {
+                    delete helper.callbacks[cb];
+                },
+                setLoop:(interval, message, transfer) => {
+                    worker.postMessage({message, COMMAND:{SETLOOP:interval}}, transfer);
+                },
+                setAnimation:(message,transfer) => {
+                    worker.postMessage({message, COMMAND:{SETANIM:true}}, transfer);
+                },
+                stop:() => {
+                    worker.postMessage({COMMAND:{STOP:true}});
+                },
+                worker,
+                callbacks
+            } as WorkerHelper;
+
+            if(callback) helper.addCallback(callback);
+
+            if(loop) {
+                helper.setLoop(loop, message, transfer);
+            } else if (animate) {
+                helper.setAnimation(message, transfer);
+            }
+
+            return helper;
+        }
 
         if(pool) {
             const workers = {};
@@ -245,7 +378,7 @@ export function threadop(
             }
 
             // If a one-off message is provided, post it to the worker and set up the handlers, then terminate after the response is met
-            if(message) {
+            if(message && !loop && !animate) {
                 Promise.all(keys.map((id,i) => {
                     const worker = workers[id];
                     let input = Array.isArray(message) ? message[i] : message; //if your message is meant to be a single array, wrap it in another array
@@ -265,8 +398,10 @@ export function threadop(
                             })
                             rj(new Error("Worker encountered an error: " + ev.message));
                         };
+
+                        const send = {message:input, oneOff:true} as any;
         
-                        worker.postMessage({message:input, oneOff:true}, transfer as Transferable[]);
+                        worker.postMessage(send, transfer as Transferable[]);
                     });
                 })).then((resolved) => {
                     URL.revokeObjectURL(workerURL);
@@ -285,7 +420,6 @@ export function threadop(
                 });
             } else {
 
-                let callbacks = {};
                 let threadRot = 0;
 
                 Object.assign(helper, {
@@ -352,76 +486,34 @@ export function threadop(
                             return rc(workerId);
                         } else return keys.map(rc);
                     },
-                    callbacks
+                    setLoop:(interval, message, transfer, workerId?:number|string) => {
+                        function sl(id) {
+                            helper.helpers[id]?.setLoop(interval, message, transfer);
+                        }
+                        if(workerId) {
+                            return sl(workerId);
+                        } else return keys.map(sl);
+                    },
+                    setAnimation:(message,transfer, workerId?:number|string) => {
+                        function sa(id) {
+                            helper.helpers[id]?.setAnimation(message, transfer);
+                        }
+                        if(workerId) {
+                            return sa(workerId);
+                        } else return keys.map(sa);
+                    },
+                    stop:(workerId?:number|string) => {
+                        function st(id) {
+                            helper.helpers[id]?.stop();
+                        }
+                        if(workerId) {
+                            return st(workerId);
+                        } else return keys.map(st);
+                    }
                 });
 
                 let withWorker = (worker) => {
-                    let blocked = false; //will prevent running if a thread is blocked
-                    let wcallbacks = {} as any;
-    
-                    worker.onmessage = (ev) => {
-                        for(const key in wcallbacks) {wcallbacks[key](ev.data.message, ev.data.cb);}
-                    }
-                    
-                    worker.onerror = (ev) => {
-                        console.error(new Error("Worker encountered an error: " + ev.message));
-                    };
-
-                    let mkcb = (message, transfer) => {
-                        return new Promise((res,rej) => {
-                            if((worker as any).PORTS) {
-                                worker.postMessage({message}, transfer);
-                                res(true);
-                            } else {
-                                if(blocking) {
-                                    if(blocked) return new Promise((res,rej) => { rej("Thread Blocked") });
-                                    blocked = true;
-                                }
-                                let cb = Math.random();
-                                wcallbacks[cb] = (data, c) => { 
-                                    if(cb === c) {
-                                        delete wcallbacks[cb]; 
-                                        if(blocking) blocked = false; 
-                                        res(data); 
-                                    }
-                                }
-                                worker.postMessage({message, cb}, transfer);
-                            }
-                        });
-                    }
-
-                    const whelper = {
-                        run: (message, transfer) => { //return a promise, will return data if a thread operation 
-                            return mkcb(message,transfer);
-                        },
-                        terminate: () => {
-                            URL.revokeObjectURL(workerURL); // This line is important for garbage collection even if you reuse the worker
-                            worker.terminate();
-                            delete workers[(worker as any).id];
-                            delete helper.helpers[(worker as any).id];
-                            if((worker as any).PORTS) {
-                                let withPort = (p,i) => {
-                                    p.postMessage({DELETED:(worker as any).id})
-                                }
-                                (worker as any).PORTS.forEach(withPort)
-                            }
-                        },
-                        addPort: (port) => setupPort(worker, port, (worker as any).id, blocking), //add a message port to send data to a second worker instead of to main thread, can send to multiple 
-                        addCallback:(callback=(data)=> {}, oneOff) => { //response to worker data
-                            let cb = Math.random(); 
-                            whelper.callbacks[cb] = oneOff ? (data) => { 
-                                callback(data); delete whelper.callbacks[cb];
-                            } : callback;
-                            return cb;
-                        },
-                        removeCallback:(cb) => {
-                            delete whelper.callbacks[cb];
-                        },
-                        worker,
-                        callbacks:wcallbacks
-                    } as WorkerHelper;
-
-                    helper.helpers[(worker as any).id] = whelper;
+                    helper.helpers[(worker as any).id] = WorkerHelper(worker);
                 }
                 
                 Object.keys(workers).forEach((id,i) => {withWorker(workers[id]);});
@@ -433,6 +525,7 @@ export function threadop(
         else {
             const id = Math.random();
             const worker = new Worker(workerURL, imports ? { type: "module" } : undefined);
+            (worker as any).id = id;
             // Otherwise, set up any provided ports and return a control object
             if (port) {
                 if(Array.isArray(port)) port.map((w)=>{setupPort(worker, w, id, blocking)})
@@ -440,7 +533,7 @@ export function threadop(
             }
 
             // If a one-off message is provided, post it to the worker and set up the handlers, then terminate after the response is met
-            if (message) {
+            if (message && !loop && !animate) {
                 worker.onmessage = (ev) => {
                     Promise.resolve().then(() => {//async
                         worker.terminate();
@@ -460,70 +553,7 @@ export function threadop(
                 worker.postMessage({message, oneOff:true}, transfer as Transferable[]);
 
             } else {
-
-                let callbacks = {};
-                let blocked = false; //will prevent running if a thread is blocked
-
-                worker.onmessage = (ev) => {
-                    for(const key in callbacks) {callbacks[key](ev.data.message, ev.data.cb);}
-                }
-                
-                worker.onerror = (ev) => {
-                    console.error(new Error("Worker encountered an error: " + ev.message));
-                };
-
-                let mkcb = (message, transfer) => {
-                    return new Promise((res,rej) => {
-                        if((worker as any).PORTS) {
-                            worker.postMessage({message}, transfer);
-                            res(true);
-                        } else {
-                            if(blocking) {
-                                if(blocked) return new Promise((res,rej) => { rej("Thread Blocked") });
-                                blocked = true;
-                            }
-                            let cb = Math.random();
-                            callbacks[cb] = (data, c) => { 
-                                if(cb === c) {
-                                    delete callbacks[cb]; 
-                                    if(blocking) blocked = false; 
-                                    res(data); 
-                                }
-                            }
-                            worker.postMessage({message, cb}, transfer);
-                        }
-                    });
-                }
-
-                const helper = {
-                    run: (message, transfer) => { //return a promise, will return data if a thread operation 
-                        return mkcb(message,transfer);
-                    },
-                    terminate: () => {
-                        URL.revokeObjectURL(workerURL); // This line is important for garbage collection even if you reuse the worker
-                        worker.terminate();
-                        if((worker as any).PORTS) {
-                            let withPort = (p,i) => {
-                                p.postMessage({DELETED:id})
-                            }
-                            (worker as any).PORTS.forEach(withPort)
-                        }
-                    },
-                    addPort: (port) => setupPort(worker, port, id, blocking), //add a message port to send data to a second worker instead of to main thread, can send to multiple 
-                    addCallback:(callback=(data)=> {}, oneOff) => { //response to worker data
-                        let cb = Math.random(); 
-                        callbacks[cb] = oneOff ? (data) => { 
-                            callback(data); delete callbacks[cb];
-                        } : callback;
-                        return cb;
-                    },
-                    removeCallback:(cb) => {
-                        delete helper.callbacks[cb];
-                    },
-                    worker,
-                    callbacks
-                } as WorkerHelper;
-
+                const helper = WorkerHelper(worker);
                 resolve(helper);
             }
         }
@@ -589,8 +619,8 @@ function getImports(imports) {
 
 function setupPort(worker, port, id, blocking) {
     const channel = new MessageChannel();
-    worker.postMessage({ SENDER: channel.port1, id, blocking }, [channel.port1]);
-    port.postMessage({ RECEIVER: channel.port2, id, blocking }, [channel.port2]);	
+    worker.postMessage({ COMMAND:{SENDER: channel.port1, id, blocking} }, [channel.port1]);
+    port.postMessage({ COMMAND:{RECEIVER: channel.port2, id, blocking} }, [channel.port2]);	
     
     if(!worker.PORTS) worker.PORTS = [];
     worker.PORTS.push(port);

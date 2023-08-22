@@ -47,7 +47,7 @@ const config = {
         reloadscripts: false, //hot swap scripts, can break things if script handles initializations, otherwise css, link, srcs all hot swap without page reloading fairly intelligently
         //delay: 50, //millisecond delay on the watch command for hot reloading
         //pwa: "dist/service-worker.js",  //pwa mode? Injects service worker registry code in (see pwa README.md)
-        //watch: ['../'], //watch additional directories other than the current working directory
+        //watch: ['../../'], //watch additional directories other than the current working directory
         python: false,//7000,  //quart server port (configured via the python server script file still)
         python_node:7001, //websocket relay port (relays messages to client from nodejs that were sent to it by python)
         errpage: 'node_modules/tinybuild/tinybuild/node_server/other/404.html', //default error page, etc.

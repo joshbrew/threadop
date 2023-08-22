@@ -67,6 +67,9 @@ type WorkerHelper = {
     addPort: (port: Worker) => void;
     addCallback: (callback?: (data: any) => void, oneOff?: boolean) => number;
     removeCallback: (cb: number) => void;
+    setLoop: (interval, message, transfer) => void, //can provide arguments to send results on loop
+    setAnimation: (message, transfer) => void,      //run an animation function, e.g. transfer a canvas with parameters
+    stop: () => void, 
     worker: Worker;
     callbacks: {[key: number]: (data: any, cb?: number) => void};
 }
@@ -78,57 +81,74 @@ type WorkerPoolHelper = {
     addCallback: (callback?: (data: any) => void, oneOff?: boolean, workerId?:number|string) => number|number[];
     removeCallback: (cb: number, workerId?:number|string) => void;
     addWorker:() => number;
+    setLoop: (interval, message, transfer, workerId?:number|string) => void, //provide arguments and run a function/send results on loop
+    setAnimation: (message, transfer, workerId?:number|string) => void, //run an animation function, e.g. transfer a canvas with parameters, or transmit results on a framerate-limited loop
+    stop: (workerId?:number|string) => void, 
     workers: {[key:string]:Worker};
     helpers: {[key:string]:WorkerHelper};
     keys: string[],
     callbacks: {[key: number]: (data: any, cb?: number) => void};
 }
+
+
 //overloads
 // When the message is defined, the function returns a Promise<any>.
 function threadop(
-    callback?: (data: any) => any, 
+    operation?: (data: any) => any, 
     options?: {
         imports?: ImportsInput, 
         message: any, 
         transfer?: Transferable[], 
         port?: Worker|Worker[], 
         blocking?: boolean,
+        loop?:number,
+        animate?:boolean,
+        callback?:(data) => void
     }
 ): Promise<any>;
 
-// When the message is defined, the function returns a Promise<any>.
+// When the message is defined and pool is defined, the function returns a Promise<any[]>.
 function threadop(
-    callback?: (data: any) => any, 
+    operation?: (data: any) => any, 
     options?: {
         imports?: ImportsInput, 
-        message: any|any[], 
+        message: any|any[], //array inputs interpreted as per-thread inputs, can be longer than the number of threads
         transfer?: Transferable[], 
         port?: Worker|Worker[], 
         blocking?: boolean,
-        pool:number
+        pool:number,
+        loop?:number,
+        animate?:boolean,
+        callback?:(data) => void
     }
 ): Promise<any[]>;
 
 // When the message isn't defined, the function returns a Promise<WorkerHelper>.
 function threadop(
-    callback?: (data: any) => any, 
-    options?: {
-        imports?: ImportsInput, 
-        transfer?: Transferable[], 
-        port?: Worker|Worker[], 
-        blocking?: boolean
-    }
-): Promise<WorkerHelper>;
-
-// When the message isn't defined, the function returns a Promise<WorkerHelper>.
-function threadop(
-    callback?: (data: any) => any, 
+    operation?: (data: any) => any, 
     options?: {
         imports?: ImportsInput, 
         transfer?: Transferable[], 
         port?: Worker|Worker[], 
         blocking?: boolean,
-        pool:number
+        loop?:number,
+        animate?:boolean,
+        callback?:(data) => void
+    }
+): Promise<WorkerHelper>;
+
+// When the message isn't defined and pool is defined, the function returns a Promise<WorkerPoolHelper>.
+function threadop(
+    operation?: (data: any) => any, 
+    options?: {
+        imports?: ImportsInput, 
+        transfer?: Transferable[], 
+        port?: Worker|Worker[], 
+        blocking?: boolean,
+        pool:number,
+        loop?:number,
+        animate?:boolean,
+        callback?:(data) => void
     }
 ): Promise<WorkerPoolHelper>;
 
@@ -368,6 +388,7 @@ There is also a subfolder called `example/npmproject` that you can run following
     }
     
     let poolinput = ['Hello','World','My','Old','Friend'];
+
     // First threadpool to encode the strings. Second to reverse. This is best for async batch processes while you need to implement 
     //something to re-collect results if trying to break up a single problem 
     threadop(reverseOperation, {
@@ -382,12 +403,14 @@ There is also a subfolder called `example/npmproject` that you can run following
                 results.push(data);
                 if(results.length == poolinput.length) {//got all our data back
                     let sortedOutput = [];
-                    poolinput.map((inp,i) => { //we're sorting because pool1 responds asynchronously and we need to check the output order if it's important for the problem
+                    poolinput.map((inp,i) => {
                         sortedOutput[i] = results.find((v) => v.input === inp).reversed;
-                    });
+                    });//we're sorting because pool1 responds asynchronously and we need to check the output order if it's important for the problem
                     console.log('Example 7: threadpool chain output', sortedOutput, "\nRe-decoded:", sortedOutput.map((v)=>{return atob(v.split("").reverse().join(""));}))// sortedOutput.map(atob));
                     pool1.terminate();
+                    res(sortedOutput);
                 }
+                
             });
 
             console.log("Example 7: threadpool chain input", poolinput);
@@ -405,5 +428,106 @@ There is also a subfolder called `example/npmproject` that you can run following
     }).catch(error => {
         console.error('Example 7: Error:', error);
     }); //should pass the result to pool1
+
+```
+
+
+### Example 8: Looping
+Execute repeating operations with a set input
+
+```js
+threadop(
+    (data) => `Processed ${data}, ${new Date().toLocaleString()}`,
+    {
+        message:"ABC123",
+        loop:1000,
+        callback:(data) => {console.log(data)},
+    }
+).then((helper) => {
+    setTimeout(() => {helper.stop()},5000);
+});
+```
+
+
+
+### Example 9: Canvas Animation
+This isn't really the best way to use this library but we included it for the hell of it.
+
+```js
+
+const canvas = document.createElement('canvas');
+canvas.width = 800;
+canvas.height = 600;
+
+canvas.style.width = '100%';
+canvas.style.height = '100%';
+canvas.style.position = 'absolute';
+document.body.appendChild(canvas);
+
+const offscreen = canvas.transferControlToOffscreen();
+//document.body.appendChild(canvas);
+
+threadop(
+    (data) => {
+        if(data.canvas && !self.canvas) { //setup
+            const canvas = data.canvas;
+            const ctx = data.canvas.getContext("2d");
+            self.canvas = canvas;
+            self.ctx = ctx;
+
+            let gradientColors = [
+                'red', 'orange', 'yellow', 'green', 'blue', 'indigo', 'violet'
+            ];
+            
+            let offset = 0;
+
+            self.drawWave = () => {
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+                // Create gradient
+                let gradient = ctx.createLinearGradient(0, canvas.height / 2,  canvas.width, canvas.height / 2);
+                gradientColors.forEach((color, index) => {
+                    gradient.addColorStop(index / (gradientColors.length - 1), color);
+                });
+            
+                ctx.fillStyle = gradient;
+                
+                const waveHeight = 100;
+                const waveLength = 0.01;
+                const speed = 0.04;
+            
+                ctx.beginPath();
+            
+                for(let x = 0; x <  canvas.width; x++) {
+                    let y =  canvas.height / 2 + waveHeight * Math.sin(waveLength * x + offset);
+                    ctx.lineTo(x, y);
+                }
+            
+                ctx.lineTo(canvas.width, canvas.height);
+                ctx.lineTo(0, canvas.height);
+                ctx.closePath();
+            
+                ctx.fill();
+
+                offset -= speed;
+            }
+        } else if(data.width && self.canvas?.width !== data.width) {
+            console.log("resized!");
+            self.canvas.width = data.width;
+            self.canvas.height = data.height;
+        }
+
+        self.drawWave();
+    },
+    {
+        animate:true,
+        message:{canvas:offscreen},
+        transfer:[offscreen]
+    }
+).then((helper) => {
+    window.onresize = (ev) => {
+        helper.setAnimation({width:window.innerWidth, height:window.innerHeight});
+    }
+});
 
 ```
