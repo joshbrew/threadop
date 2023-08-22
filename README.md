@@ -96,7 +96,7 @@ function threadop(
     }
 ): Promise<any>;
 
-// When the message is defined, the function returns a Promise<any>.
+// When the message is defined and pool is defined, the function returns a Promise<any[]>.
 function threadop(
     callback?: (data: any) => any, 
     options?: {
@@ -120,7 +120,7 @@ function threadop(
     }
 ): Promise<WorkerHelper>;
 
-// When the message isn't defined, the function returns a Promise<WorkerHelper>.
+// When the message isn't defined and pool is defined, the function returns a Promise<WorkerPoolHelper>.
 function threadop(
     callback?: (data: any) => any, 
     options?: {
