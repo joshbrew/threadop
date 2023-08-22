@@ -28,10 +28,20 @@ Or as a method
 Or access it as a global variable 
 
 ```html
-<script src="https://cdn.jsdelivr.net/npm/threadop@latest">
-    let thread = threadop(data => {return data*2}); //globalThis.threadop
-    thread.run(5).then(console.log);
-</script>
+<html>
+    <head>
+        <script src="https://cdn.jsdelivr.net/npm/threadop@latest"></script>
+    </head>
+    <body>
+        Hello World
+        <script>
+            console.log("Hello world!");
+            threadop(data => {return data*2}).then((thread) => {
+                thread.run(5).then(console.log);
+            }); //globalThis.threadop
+        </script>  
+    </body>
+</html>
 ```
 
 ## Inputs

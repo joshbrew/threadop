@@ -1,0 +1,15 @@
+<html>
+    <head>
+        <script src="https://cdn.jsdelivr.net/npm/threadop@latest"></script>
+    </head>
+    <body>
+        Hello World
+        <script>
+            
+           console.log("Hello world!");
+            threadop(data => {return data*2}).then((thread) => {
+                thread.run(5).then(console.log);
+            }); //globalThis.threadop
+        </script>  
+    </body>
+</html>
