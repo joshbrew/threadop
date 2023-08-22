@@ -6,15 +6,16 @@
 ![threadop-downloads](https://img.shields.io/npm/dt/threadop.svg)
 ![threadop-l](https://img.shields.io/npm/l/threadop)
 
-Pure (~250 line unminified, 4kb minified) implementation of a Web Worker thread operation helper. For use in browser or with the web worker library in Nodejs
+Pure (~400 lines unminified, 7kb minified) implementation of a Web Worker thread operation helper. For use in browser or with the web worker library in Nodejs
 
 Create multithreaded pipelines (with esm imports) in a single script file with a clear, minimal workflow.
 
 - Instantiate a thread from a function that simply expects the event.data from the thread postMessage function
 - One-off or repeat use with easy cleanup.
 - Chain multiple workers with message port automation
+- Instantiate threadpools from a single function, chain multiple threadpools.
 - Specify imports (local or remote) from strings or objects to use the full range of esm import abilities.
-- Dramatically increase program performance with easy parallelism! The time to instantiate a basic worker is ~0.1ms 
+- Dramatically increase program performance with easy parallelism! The time to instantiate a basic worker is ~0.1ms. 
 
 Import `threadop` as a default import 
 
@@ -60,17 +61,43 @@ type WorkerHelper = {
     callbacks: {[key: number]: (data: any, cb?: number) => void};
 }
 
-// If we provide a message, we get a result back and terminate the worker automatically
+type WorkerPoolHelper = {
+    run: (message: any|any[], transfer?: (Transferable[])|((Transferable[])[]), workerId?:number|string) => Promise<any>;
+    terminate: (workerId?:number|string) => void;
+    addPort: (port: Worker, workerId?:number|string) => boolean|boolean[];
+    addCallback: (callback?: (data: any) => void, oneOff?: boolean, workerId?:number|string) => number|number[];
+    removeCallback: (cb: number, workerId?:number|string) => void;
+    addWorker:() => number;
+    workers: {[key:string]:Worker};
+    helpers: {[key:string]:WorkerHelper};
+    keys: string[],
+    callbacks: {[key: number]: (data: any, cb?: number) => void};
+}
+//overloads
+// When the message is defined, the function returns a Promise<any>.
 function threadop(
     callback?: (data: any) => any, 
     options?: {
         imports?: ImportsInput, 
         message: any, 
         transfer?: Transferable[], 
-        port?: Worker, 
-        blocking?: boolean 
+        port?: Worker|Worker[], 
+        blocking?: boolean,
     }
 ): Promise<any>;
+
+// When the message is defined, the function returns a Promise<any>.
+function threadop(
+    callback?: (data: any) => any, 
+    options?: {
+        imports?: ImportsInput, 
+        message: any|any[], 
+        transfer?: Transferable[], 
+        port?: Worker|Worker[], 
+        blocking?: boolean,
+        pool:number
+    }
+): Promise<any[]>;
 
 // When the message isn't defined, the function returns a Promise<WorkerHelper>.
 function threadop(
@@ -78,10 +105,23 @@ function threadop(
     options?: {
         imports?: ImportsInput, 
         transfer?: Transferable[], 
-        port?: Worker, 
-        blocking?: boolean 
+        port?: Worker|Worker[], 
+        blocking?: boolean
     }
 ): Promise<WorkerHelper>;
+
+// When the message isn't defined, the function returns a Promise<WorkerHelper>.
+function threadop(
+    callback?: (data: any) => any, 
+    options?: {
+        imports?: ImportsInput, 
+        transfer?: Transferable[], 
+        port?: Worker|Worker[], 
+        blocking?: boolean,
+        pool:number
+    }
+): Promise<WorkerPoolHelper>;
+
 
 
 ```
@@ -262,4 +302,98 @@ There is also a subfolder called `example/npmproject` that you can run following
     }).catch(error => {
         console.error('Example 5: Error:', error);
     });
+```
+
+
+### Example 6: Thread pool one-off
+
+```js
+    /**
+        The example demonstrates how to set up a thread pool to parallelly encode each string in an array into a sequence of bytes using the TextEncoder. 
+        The results are then logged to the console, and any errors encountered during the process are caught and reported.
+    */
+
+    const threadpoolop = (stringdata) => {
+        if(!self.encoder) self.encoder = new TextEncoder();
+        return encoder.encode(stringdata);
+    }
+
+    let poolinput = ['Hello','World','My','Old','Friend'];
+
+    threadop(threadpoolop, {
+        pool:poolinput.length,
+        message:poolinput
+    }).then(result => {
+        console.log('Example 6: Threadpool result:', result, 'input:', poolinput);
+    }).catch(error => {
+        console.error('Example 5: Error:', error);
+    });
+
+```
+
+
+### Example 7: Thread pool chaining
+
+
+```js
+
+    /*
+        This example showcases how to chain two threadpools, where the output of the first serves as the input to the second. 
+        It encodes and then reverses a list of strings. After both operations, the results are re-collected, sorted, and then displayed. 
+        In the event of an error in this process, an error message is displayed.
+    */
+
+    const encodeOperation = stringdata => {
+        // Simulate the encoding operation.
+        //console.log('Example 7 step 1 input', stringdata);
+        let encoded = btoa(stringdata);
+        return {input:stringdata, encoded};
+    }
+
+    const reverseOperation = encodedData => {
+        // Simulate the reversing operation.
+        //console.log('Example 7 step 2 input', encodedData);
+        let reversed = encodedData.encoded.split("").reverse().join("");
+        return {reversed, input:encodedData.input};
+    }
+    
+    let poolinput = ['Hello','World','My','Old','Friend'];
+    // First threadpool to encode the strings. Second to reverse. This is best for async batch processes while you need to implement 
+    //something to re-collect results if trying to break up a single problem 
+    threadop(reverseOperation, {
+        pool: poolinput.length
+    }).then((pool1) => {
+
+        return new Promise((res,rej) => {
+
+            let results = [];
+
+            pool1.addCallback((data) => {
+                results.push(data);
+                if(results.length == poolinput.length) {//got all our data back
+                    let sortedOutput = [];
+                    poolinput.map((inp,i) => { //we're sorting because pool1 responds asynchronously and we need to check the output order if it's important for the problem
+                        sortedOutput[i] = results.find((v) => v.input === inp).reversed;
+                    });
+                    console.log('Example 7: threadpool chain output', sortedOutput, "\nRe-decoded:", sortedOutput.map((v)=>{return atob(v.split("").reverse().join(""));}))// sortedOutput.map(atob));
+                    pool1.terminate();
+                }
+            });
+
+            console.log("Example 7: threadpool chain input", poolinput);
+            
+            // Using ports, pass the encoded strings from the first pool to the second pool.
+            // Second threadpool to reverse the encoded strings.
+            threadop(encodeOperation, {
+                pool: poolinput.length,
+                message: poolinput,
+                port: Object.values(pool1.workers)
+            });
+        })
+        
+
+    }).catch(error => {
+        console.error('Example 7: Error:', error);
+    }); //should pass the result to pool1
+
 ```
