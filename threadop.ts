@@ -40,6 +40,7 @@ export type WorkerPoolHelper = {
     keys: string[],
     callbacks: {[key: number]: (data: any, cb?: number) => void};
 }
+
 //overloads
 // When the message is defined, the function returns a Promise<any>.
 export function threadop(
