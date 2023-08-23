@@ -523,11 +523,13 @@ export const initWorker = (inputFunction=()=>{}) => {
                     }
                     globalThis.WORKER.BLOCKED[key] = true;
                 }
-                globalThis.WORKER.SENDERS[key].postMessage({message:data, cb});
+                if(data?.message && data?.transfer)  globalThis.WORKER.SENDERS[key].postMessage({message:data.message, cb}, data.transfer);
+                else globalThis.WORKER.SENDERS[key].postMessage({message:data, cb});
                 if(oneOff) postMessage(true); //need to tell main thread to quit
             }
         } else {
-            postMessage({message:data, cb});
+            if(data?.message && data?.transfer) postMessage({message:data.message, cb}, data.transfer); //specifically recognized this output format
+            else postMessage({message:data, cb});
         }
     }
 

@@ -576,7 +576,7 @@ setTimeout(()=>{
 
 
 
-// Example 11: WGSL shader for the DFT with re-use (way faster!)
+// Example 11: WGSL shader for the DFT with re-use (way faster!), transfer buffers to/from
 
 
 async function WGSLDFT({inputArray, sampleRate, frequencyResolution}) {
@@ -738,8 +738,8 @@ async function WGSLDFT({inputArray, sampleRate, frequencyResolution}) {
                         copiedResults.set(rawResults); // Fast copy
         
                         stagingBuffer.unmap();
-        
-                        res(copiedResults);
+
+                        res({message:copiedResults, transfer:[copiedResults.buffer]}); //specific output format to trigger transferables 
                     });
                 })
                 
@@ -757,10 +757,11 @@ const inputArray = new Float32Array(sampleRate); // 1 second of samples
 for (let i = 0; i < sampleRate; i++) {
     inputArray[i] = amplitude * Math.sin(2 * Math.PI * frequency * i / sampleRate); // 440Hz
 }
+const inp2 = new Float32Array(inputArray);
 
 console.time('WGSL DFT Thread')
 threadop(WGSLDFT).then((helper) => {
-    helper.run({inputArray, sampleRate, frequencyResolution:1}).then((output) => {
+    helper.run({inputArray, sampleRate, frequencyResolution:1},[inputArray.buffer]).then((output) => {
         console.timeEnd('WGSL DFT Thread')
         //console.log('WGSLDFT Result', output); //unordered results
 
@@ -791,7 +792,7 @@ threadop(WGSLDFT).then((helper) => {
 
         const frequencyBins = [];
 
-        const numSamples = inputArray.length;
+        const numSamples = output.length / 2;
         const deltaF = sampleRate / numSamples; // Frequency resolution
         for (let i = 0; i < numSamples / 2; i++) {
             frequencyBins[i] = -sampleRate / 2 + i * deltaF;
@@ -822,7 +823,7 @@ threadop(WGSLDFT).then((helper) => {
 
 
         console.time('WGSL DFT Thread Run 2')
-        helper.run({inputArray, sampleRate, frequencyResolution:1}).then((output) => {
+        helper.run({inputArray:inp2, sampleRate, frequencyResolution:1}, [inp2.buffer]).then((output) => {
             console.timeEnd('WGSL DFT Thread Run 2')
             helper.terminate();
         });
