@@ -673,38 +673,43 @@ async function WGSLDFT({inputArray, sampleRate, frequencyResolution}) {
         
             process(inputArray, sampleRate, frequencyResolution) {
         
-                const inputData = this.device.createBuffer({
-                    size: inputArray.byteLength,
-                    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
-                    mappedAtCreation: true
-                });
-        
-                new Float32Array(inputData.getMappedRange()).set(inputArray);
-                inputData.unmap();
-        
-        
-                const outputData = this.device.createBuffer({
-                    size: inputArray.byteLength * 2,
-                    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC
-                });
-        
-                this.bindGroup = this.device.createBindGroup({
-                    layout: this.bindGroupLayout,
-                    entries: [
-                        {
-                            binding: 0,
-                            resource: {
-                                buffer: inputData
+                //recycle buffers when input sizes are the same
+                if (!this.inputData || this.inputData.byteLength !== inputArray.byteLength) {
+                    this.inputData = this.device.createBuffer({
+                        size: inputArray.byteLength,
+                        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+                        mappedAtCreation: true
+                    });
+                    new Float32Array(this.inputData.getMappedRange()).set(inputArray);
+                    this.inputData.unmap();
+
+                    this.outputData = this.device.createBuffer({
+                        size: inputArray.byteLength * 2,
+                        usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC
+                    });
+
+                    this.bindGroup = this.device.createBindGroup({
+                        layout: this.bindGroupLayout,
+                        entries: [
+                            {
+                                binding: 0,
+                                resource: {
+                                    buffer: this.inputData
+                                }
+                            },
+                            {
+                                binding: 1,
+                                resource: {
+                                    buffer: this.outputData
+                                }
                             }
-                        },
-                        {
-                            binding: 1,
-                            resource: {
-                                buffer: outputData
-                            }
-                        }
-                    ]
-                });
+                        ]
+                    });
+                } else {
+                    const array = new Float32Array(this.inputData.getMappedRange());
+                    array.set(inputArray);
+                    this.inputData.unmap();
+                }
         
                 const commandEncoder = this.device.createCommandEncoder();
                 const passEncoder = commandEncoder.beginComputePass();
@@ -716,14 +721,14 @@ async function WGSLDFT({inputArray, sampleRate, frequencyResolution}) {
                 passEncoder.end();
         
                 const stagingBuffer = this.device.createBuffer({
-                    size: outputData.size,
+                    size: this.outputData.size,
                     usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
                 });
         
                 commandEncoder.copyBufferToBuffer(
-                    outputData, 0,
+                    this.outputData, 0,
                     stagingBuffer, 0,
-                    outputData.size
+                    this.outputData.size
                 );
         
         
