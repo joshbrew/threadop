@@ -594,7 +594,6 @@ async function threadfft(input) {
     if(even.length >= 7500) { // 25% faster
         [E,O] = await new Promise((res) => {
             import(location.origin+'/lib/threadop.esm.js').then(async (module) => { 
-            //this is not the fastest way to instantiate modules in nested threads (better to use a compiled file) but it works
                 res(await Promise.all(
                     [
                         module.threadop(threadfft,{message:even}),
