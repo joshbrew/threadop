@@ -34,7 +34,7 @@ Instantiate threads from generic functions (with imports!) or from URLS i.e. wor
 - [Example 8: Looping](#example-8-looping)
 - [Example 9: Canvas Animation](#example-9-canvas-animation)
 - [Example 10: Using dedicated worker files and dynamic imports for a parallelized FFT](#example-10-using-dedicated-worker-files-and-dynamic-imports-for-a-parallelized-fft)
-- [### Example 11: WGSL shader for the DFT with re-use (way faster!)](#example-11-wgsl-shader-for-the-dft-with-re-use-way-faster)
+- [Example 11: WGSL shader for the DFT with re-use (way faster!)](#example-11-wgsl-shader-for-the-dft-with-re-use-way-faster)
 
 
 ## Usage
