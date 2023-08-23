@@ -700,43 +700,39 @@ for (let i = 0; i < sampleRate * duration; i++) {
 }
 
 
-// Use your FFT function
-setTimeout(()=>{
 
-    console.time('parallelFFT with file (CPU)')
-    parallelFFT(sineWave, sampleRate, 1).then(output => {
-        console.timeEnd('parallelFFT with file (CPU)');
-        const freqs = output.freqs;
-        const amplitudes = output.amplitudes;
-    
-        const trace = {
-            x: freqs,
-            y: amplitudes,
-            type: 'line',
-            name: 'Amplitude Spectrum'
-        };
-    
-        const layout = {
-            title: 'Threaded 2-radix FFT Output',
-            xaxis: {
-                title: 'Frequency (Hz)'
-            },
-            yaxis: {
-                title: 'Amplitude'
-            }
-        };
-    
-        globalThis.Plotly.newPlot('plot', [trace], layout);
-    
-        setTimeout(()=>{
-        console.time('parallelFFT with dynamic importing function (CPU)')
-        parallelFFT(sineWave, sampleRate, 1, false).then(output => {
-            console.timeEnd('parallelFFT with dynamic importing function (CPU)');
-        });
-        },1000);
+console.time('parallelFFT with file (CPU)')
+parallelFFT(sineWave, sampleRate, 1).then(output => {
+    console.timeEnd('parallelFFT with file (CPU)');
+    const freqs = output.freqs;
+    const amplitudes = output.amplitudes;
+
+    const trace = {
+        x: freqs,
+        y: amplitudes,
+        type: 'line',
+        name: 'Amplitude Spectrum'
+    };
+
+    const layout = {
+        title: 'Threaded 2-radix FFT Output',
+        xaxis: {
+            title: 'Frequency (Hz)'
+        },
+        yaxis: {
+            title: 'Amplitude'
+        }
+    };
+
+    globalThis.Plotly.newPlot('plot', [trace], layout);
+
+    setTimeout(()=>{
+    console.time('parallelFFT with dynamic importing function (CPU)')
+    parallelFFT(sineWave, sampleRate, 1, false).then(output => {
+        console.timeEnd('parallelFFT with dynamic importing function (CPU)');
     });
-
-},5000)
+    },1000);
+});
 
 
 ```
