@@ -1,9 +1,10 @@
 const config = {
     bundler: { //esbuild settings, set false to skip build step or add bundle:true to config object to only bundle (alt methods)
         entryPoints: [ //entry point file(s). These can include .js, .mjs, .ts, .jsx, .tsx, or other javascript files. Make sure your entry point is a ts file if you want to generate types
-            "index.js"
+            "index.js",
+            "fft.thread.js"
         ],
-        outfile: "dist/index", //exit point file, will append .js as well as indicators like .esm.js, .node.js for other build flags
+        outdir: "dist", //exit point file, will append .js as well as indicators like .esm.js, .node.js for other build flags
         //outdir:'dist'         //exit point folder, define for multiple entryPoints
         bundleBrowser: true, //create plain js build? Can include globals and init scripts
         bundleESM: false, //create esm module js files // { platform:'node' } //etc you can also supply an object here to add more specific esbuild settings
@@ -17,7 +18,7 @@ const config = {
         //plugins:{} //custom esbuild plugins? e.g. esbuild-sass-plugin for scss support
         //includeDefaultPlugins:true //true by default, includes the presets for the streaming imports, worker bundling, and auto npm install
         //blobWorkers:true, //package workers as blobs or files? blobs are faster but inflate the main package size
-        //workerBundler:{minifyWhitespace:true} //bundler settings specific to the worker. e.g. apply platform:'node' when bundling node workers, 
+        //workerBundler:{minifyWhitespace:false} //bundler settings specific to the worker. e.g. apply platform:'node' when bundling node workers, 
         //globalThis:null //'mymodule'
         //globals:{'index.js':['Graph']}
         //init:{'index.js':function(bundle) { console.log('prepackaged bundle script!', bundle); }.toString(); }      

@@ -39,7 +39,7 @@ export type WorkerPoolHelper = {
         [key: number]: (data: any, cb?: number) => void;
     };
 };
-export declare function threadop(operation?: (data: any) => any, options?: {
+export declare function threadop(operation?: string | Blob | ((data: any) => void), options?: {
     imports?: ImportsInput;
     message: any;
     transfer?: Transferable[];
@@ -49,7 +49,7 @@ export declare function threadop(operation?: (data: any) => any, options?: {
     animate?: boolean;
     callback?: (data: any) => void;
 }): Promise<any>;
-export declare function threadop(operation?: (data: any) => any, options?: {
+export declare function threadop(operation?: string | Blob | ((data: any) => void), options?: {
     imports?: ImportsInput;
     message: any | any[];
     transfer?: Transferable[];
@@ -60,7 +60,7 @@ export declare function threadop(operation?: (data: any) => any, options?: {
     animate?: boolean;
     callback?: (data: any) => void;
 }): Promise<any[]>;
-export declare function threadop(operation?: (data: any) => any, options?: {
+export declare function threadop(operation?: string | Blob | ((data: any) => void), options?: {
     imports?: ImportsInput;
     transfer?: Transferable[];
     port?: Worker | Worker[];
@@ -69,7 +69,7 @@ export declare function threadop(operation?: (data: any) => any, options?: {
     animate?: boolean;
     callback?: (data: any) => void;
 }): Promise<WorkerHelper>;
-export declare function threadop(operation?: (data: any) => any, options?: {
+export declare function threadop(operation?: string | Blob | ((data: any) => void), options?: {
     imports?: ImportsInput;
     transfer?: Transferable[];
     port?: Worker | Worker[];
@@ -79,4 +79,7 @@ export declare function threadop(operation?: (data: any) => any, options?: {
     animate?: boolean;
     callback?: (data: any) => void;
 }): Promise<WorkerPoolHelper>;
+export declare const initWorker: (inputFunction?: () => void) => void;
+export declare const workerFnString: string;
+export declare const generateWorkerURL: (operation: any, imports: any) => string;
 export default threadop;

@@ -6,6 +6,8 @@
 ![threadop-downloads](https://img.shields.io/npm/dt/threadop.svg)
 ![threadop-l](https://img.shields.io/npm/l/threadop)
 
+## Description
+
 Pure (~450 lines unminified, 7kb minified) implementation of a Web Worker thread operation helper. For use in browser or with the web worker library in Nodejs
 
 Create multithreaded pipelines (with esm imports) in a single script file with a clear, minimal workflow.
@@ -17,6 +19,24 @@ Create multithreaded pipelines (with esm imports) in a single script file with a
 - Specify imports (local or remote) from strings or objects to use the full range of esm import abilities.
 - loops, animations, with propagation
 - Dramatically increase program performance with easy parallelism! The time to instantiate a basic worker is ~0.1ms. 
+
+Instantiate threads from generic functions (with imports!) or from URLS i.e. worker file locations or Blobs.
+
+#### List of examples:
+
+- [Example 1: One-off usage](#example-1-one-off-usage)
+- [Example 2: Repeat operations](#example-2-repeat-operations)
+- [Example 3: Chaining workers](#example-3-chaining-workers)
+- [Example 4: local import](#example-4-local-import)
+- [Example 5: Web import with a specified library function](#example-5-web-import-with-a-specified-library-function)
+- [Example 6: Thread pool one-off](#example-6-thread-pool-one-off)
+- [Example 7: Thread pool chaining](#example-7-thread-pool-chaining)
+- [Example 8: Looping](#example-8-looping)
+- [Example 9: Canvas Animation](#example-9-canvas-animation)
+- [Example 10: Using dedicated worker files and dynamic imports for a parallelized FFT](#example-10-using-dedicated-worker-files-and-dynamic-imports-for-a-parallelized-fft)
+
+
+## Usage
 
 Import `threadop` as a default import 
 
@@ -45,7 +65,7 @@ Or access it as a global variable
 </html>
 ```
 
-## Inputs
+## Input Options
 
 ```ts
 type ModuleImport = {
@@ -94,8 +114,8 @@ type WorkerPoolHelper = {
 
 //overloads
 // When the message is defined, the function returns a Promise<any>.
-function threadop(
-    operation?: (data: any) => any, 
+export function threadop(
+    operation?:string|Blob|((data)=>void), 
     options?: {
         imports?: ImportsInput, 
         message: any, 
@@ -109,8 +129,8 @@ function threadop(
 ): Promise<any>;
 
 // When the message is defined and pool is defined, the function returns a Promise<any[]>.
-function threadop(
-    operation?: (data: any) => any, 
+export function threadop(
+    operation?:string|Blob|((data)=>void), 
     options?: {
         imports?: ImportsInput, 
         message: any|any[], //array inputs interpreted as per-thread inputs, can be longer than the number of threads
@@ -125,8 +145,8 @@ function threadop(
 ): Promise<any[]>;
 
 // When the message isn't defined, the function returns a Promise<WorkerHelper>.
-function threadop(
-    operation?: (data: any) => any, 
+export function threadop(
+    operation?:string|Blob|((data)=>void), 
     options?: {
         imports?: ImportsInput, 
         transfer?: Transferable[], 
@@ -139,8 +159,8 @@ function threadop(
 ): Promise<WorkerHelper>;
 
 // When the message isn't defined and pool is defined, the function returns a Promise<WorkerPoolHelper>.
-function threadop(
-    operation?: (data: any) => any, 
+export function threadop(
+    operation?:string|Blob|((data)=>void), 
     options?: {
         imports?: ImportsInput, 
         transfer?: Transferable[], 
@@ -155,6 +175,7 @@ function threadop(
 
 
 
+
 ```
 
 ## Examples
@@ -162,6 +183,7 @@ function threadop(
 There is an `examples.html` file in the example/ folder in this repo, you can run it with the LiveServer extension in VSCode and look in the console to see it working. Below are all the examples tested.
 
 There is also a subfolder called `example/npmproject` that you can run following the readme.
+
 
 ### Example 1: One-off usage
 ```js
@@ -315,7 +337,7 @@ There is also a subfolder called `example/npmproject` that you can run following
     });
 ```
     
-### Example 5, Web import with a specified library function
+### Example 5: Web import with a specified library function
 
 ```js   
     const lodashop = data => {
@@ -530,5 +552,258 @@ threadop(
         helper.setAnimation({width:window.innerWidth, height:window.innerHeight});
     }
 });
+
+```
+
+
+### Example 10 Using dedicated worker files and dynamic imports for a parallelized FFT
+
+This isn't exactly a *good* parallel implementation but it's about 30% faster than a single dedicated thread for the divide and conquer FFT
+
+
+```js
+
+
+function nextPowerOf2(n) {
+    let count = 0;
+    if (n && !(n & (n - 1))) return n;
+    while(n != 0) {
+        n >>= 1;
+        count += 1;
+    }
+    return 1 << count;
+}
+
+// Cooley-Tukey radix-2 FFT
+async function threadfft(input) {
+    const N = input.length;
+
+    if (N <= 1) return input;
+
+    // Decomposition into even and odd components
+    const even = [];
+    const odd = [];
+    for (let i = 0; i < N; i += 2) {
+        even.push(input[i]);
+        if ((i + 1) < N) {
+            odd.push(input[i + 1]);
+        }
+    }
+
+    let E, O;
+    if(even.length >= 7500) { // 25% faster
+        [E,O] = await new Promise((res) => {
+            import(location.origin+'/lib/threadop.esm.js').then(async (module) => { 
+            //this is not the fastest way to instantiate modules in nested threads (better to use a compiled file) but it works
+                res(await Promise.all(
+                    [
+                        module.threadop(threadfft,{message:even}),
+                        module.threadop(threadfft,{message:odd})
+                    ]
+                ));
+            });
+        })
+        
+    } else {
+        [E, O] = [await threadfft(even), await threadfft(odd)];
+    }
+
+    const T = new Array(N);
+    for (let k = 0; k < N / 2; k++) {
+        const angle = -2 * Math.PI * k / N;
+
+        // complex multiplication for e^(-j*angle) and O[k]
+        const tReal = Math.cos(angle) * O[k].real - Math.sin(angle) * O[k].imag;
+        const tImag = Math.cos(angle) * O[k].imag + Math.sin(angle) * O[k].real;
+
+        // complex addition for E[k] and t
+        T[k] = {
+            real: E[k].real + tReal,
+            imag: E[k].imag + tImag
+        };
+
+        // complex subtraction for E[k] and t
+        T[k + N / 2] = {
+            real: E[k].real - tReal,
+            imag: E[k].imag - tImag
+        };
+    }
+    return T//res(T);
+ 
+}
+
+
+async function parallelFFT(input, sampleRate = 44100, frequencyResolution = 1, dedicatedThreadFile=true) {
+    const N = input.length;
+
+    // Calculate the number of samples required for the desired resolution
+    const M = Math.max(nextPowerOf2(N), Math.ceil(sampleRate / frequencyResolution));
+    
+    // Pad the input with zeros if needed
+    while (input.length < M) {
+        input.push({real: 0, imag: 0});
+    }
+
+    if (N <= 1) return input;
+    
+    // Wait for the results from both threads
+    //const T = await threadop(threadfft, {message: input});
+    const T = await threadop(dedicatedThreadFile ? './dist/fft.thread.js' : threadfft, {message: input});
+   
+    // Calculate the magnitudes
+    const magnitudes = T.map(bin => Math.sqrt(bin.real * bin.real + bin.imag * bin.imag)/M); //not scaling perfectly
+
+    // Calculate mid point
+    const midPoint = Math.floor(M/2);
+
+    // Order the magnitudes from -Nyquist to Nyquist
+    let orderedMagnitudes = new Array(M);
+    for(let i = 0; i < M; i++) {
+        if(i < midPoint) {
+            orderedMagnitudes[midPoint + i] = magnitudes[i];
+        } else {
+            orderedMagnitudes[i - midPoint] = magnitudes[i];
+        }
+    }
+
+    // Frequencies from -Nyquist to Nyquist
+    let orderedFreqs = [...Array(M).keys()].map(i => (i - midPoint) * sampleRate / M);
+
+    return {
+        amplitudes: orderedMagnitudes,
+        freqs: orderedFreqs
+    };
+}
+
+
+
+//Test
+
+import './lib/plotly-latest.min.js'; //local import
+document.body.insertAdjacentHTML('beforeend',`<div id="plot"></div>`);
+document.body.insertAdjacentHTML('beforeend',`<div id="plot2"></div>`);
+
+// Create a sine wave
+const sampleRate = 44100;
+const frequency = 2500; // Frequency of A4 note
+const duration = 1; // seconds
+const amplitude = 0.5;
+let sineWave = [];
+let sineWave2 = [];
+
+for (let i = 0; i < sampleRate * duration; i++) {
+    const value = {
+        real: amplitude * Math.sin(2 * Math.PI * frequency * i / sampleRate),
+        imag: 0
+    };
+    sineWave.push(value);
+    sineWave2.push(value.real);
+}
+
+
+// Use your FFT function
+setTimeout(()=>{
+
+    console.time('parallelFFT with file (CPU)')
+    parallelFFT(sineWave, sampleRate, 1).then(output => {
+        console.timeEnd('parallelFFT with file (CPU)');
+        const freqs = output.freqs;
+        const amplitudes = output.amplitudes;
+    
+        const trace = {
+            x: freqs,
+            y: amplitudes,
+            type: 'line',
+            name: 'Amplitude Spectrum'
+        };
+    
+        const layout = {
+            title: 'Threaded 2-radix FFT Output',
+            xaxis: {
+                title: 'Frequency (Hz)'
+            },
+            yaxis: {
+                title: 'Amplitude'
+            }
+        };
+    
+        globalThis.Plotly.newPlot('plot', [trace], layout);
+    
+        setTimeout(()=>{
+        console.time('parallelFFT with dynamic importing function (CPU)')
+        parallelFFT(sineWave, sampleRate, 1, false).then(output => {
+            console.timeEnd('parallelFFT with dynamic importing function (CPU)');
+        });
+        },1000);
+    });
+
+},5000)
+
+
+```
+
+Plus a dedicated worker file to test against the dynamic importing
+
+##### fft.thread.js (built to dist/fft.thread.js)
+```js
+
+import {threadop, initWorker} from './lib/threadop.esm.js'
+
+// Cooley-Tukey radix-2 FFT
+async function threadfft(input) {
+    const N = input.length;
+
+    if (N <= 1) return input;
+
+    // Decomposition into even and odd components
+    const even = [];
+    const odd = [];
+    for (let i = 0; i < N; i += 2) {
+        even.push(input[i]);
+        if ((i + 1) < N) {
+            odd.push(input[i + 1]);
+        }
+    }
+
+    let E, O;
+    if(even.length >= 7500) { // 25% faster
+        [E,O] = await Promise.all(
+            [
+                threadop('./fft.thread.js',{message:even}),
+                threadop('./fft.thread.js',{message:odd})
+            ]
+        );
+        
+    } else {
+        [E, O] = [await threadfft(even), await threadfft(odd)];
+    }
+
+    const T = new Array(N);
+    for (let k = 0; k < N / 2; k++) {
+        const angle = -2 * Math.PI * k / N;
+
+        // complex multiplication for e^(-j*angle) and O[k]
+        const tReal = Math.cos(angle) * O[k].real - Math.sin(angle) * O[k].imag;
+        const tImag = Math.cos(angle) * O[k].imag + Math.sin(angle) * O[k].real;
+
+        // complex addition for E[k] and t
+        T[k] = {
+            real: E[k].real + tReal,
+            imag: E[k].imag + tImag
+        };
+
+        // complex subtraction for E[k] and t
+        T[k + N / 2] = {
+            real: E[k].real - tReal,
+            imag: E[k].imag - tImag
+        };
+    }
+    return T//res(T);
+ 
+}
+
+initWorker(threadfft);
+
+
 
 ```

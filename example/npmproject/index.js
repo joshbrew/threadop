@@ -135,14 +135,14 @@ threadop(workerFunctionA, {
                 workerHelperA.terminate();
                 workerHelperB.terminate();
             }
-            //workerHelperA.run(10);
+            workerHelperA.run(10);
         });
 
         workerHelperA.run(5).then(result => {
             console.log('Chain workerHelperA result', result); // Result from the chained worker operation
         });
 
-        //workerHelperA.run(15) //Blocked!
+        workerHelperA.run(15) //Blocked!
     });
 
 }).catch(error => {
@@ -174,7 +174,7 @@ const computeMean = data => {
 const data = [1, 2, 3, 4, 5];
 
 threadop(computeMean, {
-    imports: './num.min.js', //['./num.min.js'] //or { './num.min.js':true } //use objects to get more fine grained, e.g. for a import url pass an object with specific module methods and alias strings or bools
+    imports: './lib/num.min.js', //['./num.min.js'] //or { './num.min.js':true } //use objects to get more fine grained, e.g. for a import url pass an object with specific module methods and alias strings or bools
     message: data
 }).then(result => {
     console.log('Example 4: Mean:', result);
@@ -304,7 +304,10 @@ threadop(
         callback:(data) => {console.log(data)},
     }
 ).then((helper) => {
-    setTimeout(() => {helper.stop()},5000);
+    setTimeout(() => {
+        helper.stop();
+        helper.terminate();
+    },5000);
 });
 
 
@@ -388,6 +391,289 @@ threadop(
     }
 });
 
+
+//Example 10: FFT
+
+
+function nextPowerOf2(n) {
+    let count = 0;
+    if (n && !(n & (n - 1))) return n;
+    while(n != 0) {
+        n >>= 1;
+        count += 1;
+    }
+    return 1 << count;
+}
+
+// Cooley-Tukey radix-2 FFT
+async function threadfft(input) {
+    const N = input.length;
+
+    if (N <= 1) return input;
+
+    // Decomposition into even and odd components
+    const even = [];
+    const odd = [];
+    for (let i = 0; i < N; i += 2) {
+        even.push(input[i]);
+        if ((i + 1) < N) {
+            odd.push(input[i + 1]);
+        }
+    }
+
+    let E, O;
+
+    const SAMPLE_THREAD_THRESHOLD = 7500; //this is not the smartet way to bucket threads but it is a little faster
+
+    if(even.length >= SAMPLE_THREAD_THRESHOLD) { // 25% faster
+        [E,O] = await new Promise((res) => {
+            import(location.origin+'/lib/threadop.esm.js').then(async (module) => { 
+            //this is not the fastest way to instantiate modules in nested threads (better to use a compiled file) but it works
+                res(await Promise.all(
+                    [
+                        module.threadop(threadfft,{message:even}),
+                        module.threadop(threadfft,{message:odd})
+                    ]
+                ));
+            });
+        })
+        
+    } else {
+        [E, O] = [await threadfft(even), await threadfft(odd)];
+    }
+
+    const T = new Array(N);
+    for (let k = 0; k < N / 2; k++) {
+        const angle = -2 * Math.PI * k / N;
+
+        // complex multiplication for e^(-j*angle) and O[k]
+        const tReal = Math.cos(angle) * O[k].real - Math.sin(angle) * O[k].imag;
+        const tImag = Math.cos(angle) * O[k].imag + Math.sin(angle) * O[k].real;
+
+        // complex addition for E[k] and t
+        T[k] = {
+            real: E[k].real + tReal,
+            imag: E[k].imag + tImag
+        };
+
+        // complex subtraction for E[k] and t
+        T[k + N / 2] = {
+            real: E[k].real - tReal,
+            imag: E[k].imag - tImag
+        };
+    }
+    return T//res(T);
+ 
+}
+
+
+async function parallelFFT(input, sampleRate = 44100, frequencyResolution = 1, dedicatedThreadFile=true) {
+    const N = input.length;
+
+    // Calculate the number of samples required for the desired resolution
+    const M = Math.max(nextPowerOf2(N), Math.ceil(sampleRate / frequencyResolution));
+    
+    // Pad the input with zeros if needed
+    while (input.length < M) {
+        input.push({real: 0, imag: 0});
+    }
+
+    if (N <= 1) return input;
+    
+    // Wait for the results from both threads
+    //const T = await threadop(threadfft, {message: input});
+    const T = await threadop(dedicatedThreadFile ? './dist/fft.thread.js' : threadfft, {message: input});
+   
+    // Calculate the magnitudes
+    const magnitudes = T.map(bin => Math.sqrt(bin.real * bin.real + bin.imag * bin.imag)/M);
+
+    // Calculate mid point
+    const midPoint = Math.floor(M/2);
+
+    // Order the magnitudes from -Nyquist to Nyquist
+    let orderedMagnitudes = new Array(M);
+    for(let i = 0; i < M; i++) {
+        if(i < midPoint) {
+            orderedMagnitudes[midPoint + i] = magnitudes[i];
+        } else {
+            orderedMagnitudes[i - midPoint] = magnitudes[i];
+        }
+    }
+
+    // Frequencies from -Nyquist to Nyquist
+    let orderedFreqs = [...Array(M).keys()].map(i => (i - midPoint) * sampleRate / M);
+
+    return {
+        amplitudes: orderedMagnitudes,
+        freqs: orderedFreqs
+    };
+}
+
+
+//for comparison
+const dft = (sineWave = [], sampleRate = 250, frequencyResolution = 0.25) => {
+
+    const N = sineWave.length;
+    const NyquistLimit = Math.floor(sampleRate / 2);
+    const totalFreqs = Math.floor(NyquistLimit / frequencyResolution);
+    const Npadded = Math.ceil(sampleRate / frequencyResolution);  // Calculate the number of samples required for the desired resolution
+    
+    const TWOPI = 2 * 3.141592653589793;
+    const real = new Array(Npadded).fill(0);
+    const imag = new Array(Npadded).fill(0);
+    const amplitudes = new Array(Npadded);
+
+    const zerosToAdd = Npadded - N;
+    if(zerosToAdd < 0) {
+        throw new Error("Desired resolution is not achievable with current sample size.");
+    }
+
+    const paddedSineWave = zerosToAdd ? [...sineWave, ...Array(zerosToAdd).fill(0)] : sineWave;
+
+    
+    let orderedFrequencies;
+
+    if (totalFreqs % 2 === 0) {
+        // Even number of frequency bins
+        orderedFrequencies = [
+            ...new Array(totalFreqs).fill(0).map((x, i) => -NyquistLimit + i * frequencyResolution),
+            ...new Array(totalFreqs).fill(0).map((x, i) => i * frequencyResolution)
+        ];
+    } else {
+        // Odd number of frequency bins
+        orderedFrequencies = [
+            ...new Array(totalFreqs).fill(0).map((x, i) => -NyquistLimit + i * frequencyResolution),
+            ...new Array(totalFreqs + 1).fill(0).map((x, i) => i * frequencyResolution)
+        ];
+    }
+
+
+    for (let k = 0; k < Npadded; k++) {
+
+        //let limit = Math.abs(orderedFrequencies[k]); if (limit === 0) limit = 2; else limit = Math.floor(limit*2);
+
+        for (let j = 0; j < Npadded; j++) {
+            const shared = TWOPI * k * j / Npadded;
+            real[k] += paddedSineWave[j] * Math.cos(shared);
+            imag[k] -= paddedSineWave[j] * Math.sin(shared);
+        }
+
+        amplitudes[k] = 2 * (Math.sqrt(real[k] * real[k] + imag[k] * imag[k])) / Npadded;
+    }
+    
+    let orderedMagnitudes;
+
+    // Even number of frequency bins
+    if (totalFreqs % 2 === 0) {
+        orderedMagnitudes = [
+            ...amplitudes.slice(totalFreqs, 2 * totalFreqs),
+            ...amplitudes.slice(0, totalFreqs),
+        ];
+        orderedFrequencies = [
+            ...new Array(totalFreqs).fill(0).map((x, i) => -NyquistLimit + i * frequencyResolution),
+            ...new Array(totalFreqs).fill(0).map((x, i) => (i+1) * frequencyResolution)
+        ];
+    } else {
+        // Odd number of frequency bins
+        orderedMagnitudes = [
+            ...amplitudes.slice(totalFreqs, 2 * totalFreqs),
+            ...amplitudes.slice(0, totalFreqs + 1)
+        ];
+        orderedFrequencies = [
+            ...new Array(totalFreqs).fill(0).map((x, i) => -NyquistLimit + i * frequencyResolution),
+            ...new Array(totalFreqs + 1).fill(0).map((x, i) => i * frequencyResolution)
+        ];
+    }
+
+    return {
+        real,
+        imag,
+        freqs: orderedFrequencies,  // Compute frequency bins based on padded size
+        amplitudes: orderedMagnitudes
+    }
+}
+
+
+//Test
+
+import './lib/plotly-latest.min.js';
+document.body.insertAdjacentHTML('beforeend',`<div id="plot"></div>`);
+document.body.insertAdjacentHTML('beforeend',`<div id="plot2"></div>`);
+
+// Create a sine wave
+const sampleRate = 44100;
+const frequency = 2500; // Frequency of A4 note
+const duration = 1; // seconds
+const amplitude = 0.5;
+let sineWave = [];
+let sineWave2 = [];
+
+for (let i = 0; i < sampleRate * duration; i++) {
+    const value = {
+        real: amplitude * Math.sin(2 * Math.PI * frequency * i / sampleRate),
+        imag: 0
+    };
+    sineWave.push(value);
+    sineWave2.push(value.real);
+}
+
+
+// Use your FFT function
+setTimeout(()=>{
+
+    console.time('parallelFFT with file (CPU)')
+    parallelFFT(sineWave, sampleRate, 1).then(output => {
+        console.timeEnd('parallelFFT with file (CPU)');
+        const freqs = output.freqs;
+        const amplitudes = output.amplitudes;
+    
+        const trace = {
+            x: freqs,
+            y: amplitudes,
+            type: 'line',
+            name: 'Amplitude Spectrum'
+        };
+    
+        const layout = {
+            title: 'Threaded 2-radix FFT Output',
+            xaxis: {
+                title: 'Frequency (Hz)'
+            },
+            yaxis: {
+                title: 'Amplitude'
+            }
+        };
+    
+        globalThis.Plotly.newPlot('plot', [trace], layout);
+    
+        setTimeout(()=>{
+        console.time('parallelFFT with dynamic importing function (CPU)')
+        parallelFFT(sineWave, sampleRate, 1, false).then(output => {
+            console.timeEnd('parallelFFT with dynamic importing function (CPU)');
+            // console.time('DFT single threaded');
+            // const result = dft(sineWave2, sampleRate, 1);
+            // console.timeEnd('DFT single threaded');
+            // Plotly.newPlot('plot2', [{
+            //     x: result.freqs,
+            //     y: result.amplitudes,
+            //     type: 'scatter',
+            //     mode: 'lines+markers'
+            // }], {
+            //     title: 'Amplitude Spectrum',
+            //     xaxis: {
+            //         title: 'Frequency (Hz)'
+            //     },
+            //     yaxis: {
+            //         title: 'Amplitude'
+            //     }
+            // });
+            // console.log('PLOTTED')
+        
+        });
+        },1000);
+    });
+
+},5000)
 
 
 //------------------------------------------------

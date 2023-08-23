@@ -44,7 +44,7 @@ export type WorkerPoolHelper = {
 //overloads
 // When the message is defined, the function returns a Promise<any>.
 export function threadop(
-    operation?: (data: any) => any, 
+    operation?:string|Blob|((data)=>void), 
     options?: {
         imports?: ImportsInput, 
         message: any, 
@@ -59,7 +59,7 @@ export function threadop(
 
 // When the message is defined and pool is defined, the function returns a Promise<any[]>.
 export function threadop(
-    operation?: (data: any) => any, 
+    operation?:string|Blob|((data)=>void), 
     options?: {
         imports?: ImportsInput, 
         message: any|any[], //array inputs interpreted as per-thread inputs, can be longer than the number of threads
@@ -75,7 +75,7 @@ export function threadop(
 
 // When the message isn't defined, the function returns a Promise<WorkerHelper>.
 export function threadop(
-    operation?: (data: any) => any, 
+    operation?:string|Blob|((data)=>void), 
     options?: {
         imports?: ImportsInput, 
         transfer?: Transferable[], 
@@ -89,7 +89,7 @@ export function threadop(
 
 // When the message isn't defined and pool is defined, the function returns a Promise<WorkerPoolHelper>.
 export function threadop(
-    operation?: (data: any) => any, 
+    operation?:string|Blob|((data)=>void), 
     options?: {
         imports?: ImportsInput, 
         transfer?: Transferable[], 
@@ -102,11 +102,9 @@ export function threadop(
     }
 ): Promise<WorkerPoolHelper>;
 
-
 //implementation
-
 export function threadop(
-    operation = (data) => data, 
+    operation:string|Blob|((data)=>void) = (data) => data, 
     { 
         imports, //ImportsInput
         message, 
@@ -131,141 +129,21 @@ export function threadop(
 ): Promise<any | WorkerHelper>  {
     return new Promise((resolve, reject) => {
 
-        // Inner function that will run inside the worker
-        const workerFn = () => {
-
-            //console.log('thread!');
-            globalThis.WORKER = {};
-
-            const sendData = (data:any, cb:number, oneOff:boolean) => {
-                if (globalThis.WORKER.SENDERS) { //forward to message ports instead of to main thread
-                    for(const key in globalThis.WORKER.SENDERS) {
-                        if(globalThis.WORKER.BLOCKING[key]) {
-                            if(globalThis.WORKER.BLOCKED[key]) {
-                                console.error("Thread Blocked: " + key);
-                                continue;
-                            }
-                            globalThis.WORKER.BLOCKED[key] = true;
-                        }
-                        globalThis.WORKER.SENDERS[key].postMessage({message:data, cb});
-                        if(oneOff) postMessage(true); //need to tell main thread to quit
-                    }
-                } else {
-                    postMessage({message:data, cb});
-                }
+        let workerURL;
+        if(typeof operation !== 'function') {
+            //this is an url (string or blob)
+            if(typeof operation === 'string' && operation.startsWith('./')) {
+                let relpath = location.origin;
+                let pname = location.pathname.split('/');
+                pname.pop();
+                let joined = pname.join('/');
+                if(!joined.startsWith('http')) relpath += joined + '/'; else relpath += '/';
+                operation =  relpath + operation;
             }
-
-            const onData = (ev:any, RECEIVER?:MessagePort) => {
-                //@ts-ignore
-                let result = (()=>{})(ev.data?.message) as any;
-                
-                if (result?.then) {
-                    result.then((resolvedData) => {
-                        if(RECEIVER) {
-                            //console.log("sending back to SENDER", true);
-                            RECEIVER.postMessage(true);
-                        }
-                        sendData(resolvedData, ev.data.cb, ev.data.oneOff);
-                    });
-                } else {
-                    if(RECEIVER) {
-                        //console.log("sending back to SENDER", true);
-                        RECEIVER.postMessage(true);
-                    }
-                    sendData(result, ev.data.cb, ev.data.oneOff);
-                }
-            };
-
-            globalThis.onmessage = (ev) => {
-                // Handle different types of messages: RECEIVER, SENDER, TERMINATED, or data
-                
-                if(ev.data?.COMMAND) { //process commands for the worker system
-                    const cmd = ev.data.COMMAND;
-                    if(typeof cmd.SETLOOP === 'number') {
-                        if(globalThis.WORKER.LOOP) clearTimeout(globalThis.WORKER.LOOP);
-                        const loop = () => {
-                            onData(ev); globalThis.WORKER.LOOP = setTimeout(() => { loop(); }, cmd.SETLOOP);
-                        }
-                        loop();
-                    }
-                    if(cmd.SETANIM) {
-                        if(globalThis.WORKER.ANIM) cancelAnimationFrame(globalThis.WORKER.ANIM);
-                        const animate = () => {
-                            onData(ev); globalThis.WORKER.ANIM = requestAnimationFrame(() => { animate(); });
-                        }
-                        animate();
-                    }
-                    if(cmd.STOP) {
-                        if(globalThis.WORKER.LOOP) clearTimeout(globalThis.WORKER.LOOP);
-                        if(globalThis.WORKER.ANIM) cancelAnimationFrame(globalThis.WORKER.ANIM);
-                    }
-                    if(cmd.RECEIVER) {
-                        const blocking = cmd.blocking;
-                        if(!globalThis.WORKER.RECEIVERS) {
-                            globalThis.WORKER.RTCR = 0;
-                            globalThis.WORKER.RECEIVERS = {} as {[key:string]:MessagePort};
-                        }
-                        const _id = cmd.id;
-                        globalThis.WORKER.RECEIVERS[_id] = cmd.RECEIVER;
-                        globalThis.WORKER.RTCR++;
-    
-                        cmd.RECEIVER.onmessage = (event) => {
-                            onData(event, blocking ? cmd.RECEIVER : undefined);
-                        }
-    
-                        cmd.RECEIVER.onerror = (er) => {
-                            delete globalThis.WORKER.RECEIVERS[_id];
-                        }
-                    } 
-                    if(cmd.SENDER) {
-                        if(!globalThis.WORKER.SENDERS) {
-                            globalThis.WORKER.PCTR = 0;
-                            globalThis.WORKER.SENDERS = {};
-                            globalThis.WORKER.BLOCKING = {};
-                            globalThis.WORKER.BLOCKED = {};
-                        }
-                        const blocking = cmd.blocking;
-                        const _id = cmd.id ? cmd.id : globalThis.WORKER.PCTR;
-                        globalThis.WORKER.SENDERS[_id] = cmd.SENDER;
-                        globalThis.WORKER.PCTR++;
-    
-                        if(blocking) globalThis.WORKER.BLOCKING[_id] = true;
-    
-                        cmd.SENDER.onmessage = (event) => { 
-                            //console.log('RECEIVER sent back', event.data);
-                            if(globalThis.WORKER.BLOCKING[_id]) {
-                                globalThis.WORKER.BLOCKED[_id] = false; 
-                                //console.log('unblocked')
-                            }
-                        }
-    
-                        cmd.SENDER.onerror = (er) => {
-                            delete globalThis.WORKER.SENDERS[_id];
-                        }
-                    }  
-                    if (cmd.DELETED) {
-                        delete globalThis.WORKER.RECEIVERS?.[cmd.DELETED];
-                        delete globalThis.WORKER.SENDERS?.[cmd.DELETED];
-                    } 
-                } else {
-                    onData(ev);
-                }
-            };
-
-            globalThis.onerror = (er) => { console.error(er); }
+            workerURL = operation; //string url or blob
+        } else {
+            workerURL = generateWorkerURL(operation, imports);
         }
-
-        // Convert the worker function to a string, including imports
-        let workerFnString = workerFn.toString().replace('()=>{}', operation.toString());
-        let importString = getImports(imports);
-
-        //console.log(importString);
-
-        let workerString = `${importString}\n(${workerFnString})()`;
-
-        // Create the worker
-        const blob = new Blob([workerString], { type: 'application/javascript' });
-        const workerURL = URL.createObjectURL(blob);
 
         const WorkerHelper = (worker) => {
 
@@ -357,7 +235,7 @@ export function threadop(
             let helper = {} as any as WorkerPoolHelper;
 
             function addWrkr() {
-                let worker = new Worker(workerURL, imports ? { type: "module" } : undefined);
+                let worker = new Worker(workerURL, (imports || typeof operation !== 'function') ? { type: "module" } : undefined);
                 const id = Math.random();
                 (worker as any).id = id;
                 workers[id] = worker;
@@ -525,7 +403,7 @@ export function threadop(
         }
         else {
             const id = Math.random();
-            const worker = new Worker(workerURL, imports ? { type: "module" } : undefined);
+            const worker = new Worker(workerURL, (imports || typeof operation !== 'function') ? { type: "module" } : undefined);
             (worker as any).id = id;
             // Otherwise, set up any provided ports and return a control object
             if (port) {
@@ -630,6 +508,151 @@ function setupPort(worker, port, id, blocking) {
 }
 
 //globalThis.threadop = threadop;
+export const initWorker = (inputFunction=()=>{}) => {
+
+    //console.log('thread!');
+    globalThis.WORKER = {};
+
+    const sendData = (data:any, cb:number, oneOff:boolean) => {
+        if (globalThis.WORKER.SENDERS) { //forward to message ports instead of to main thread
+            for(const key in globalThis.WORKER.SENDERS) {
+                if(globalThis.WORKER.BLOCKING[key]) {
+                    if(globalThis.WORKER.BLOCKED[key]) {
+                        console.error("Thread Blocked: " + key);
+                        continue;
+                    }
+                    globalThis.WORKER.BLOCKED[key] = true;
+                }
+                globalThis.WORKER.SENDERS[key].postMessage({message:data, cb});
+                if(oneOff) postMessage(true); //need to tell main thread to quit
+            }
+        } else {
+            postMessage({message:data, cb});
+        }
+    }
+
+    const onData = (ev:any, RECEIVER?:MessagePort) => {
+        //@ts-ignore
+        let result = (inputFunction)(ev.data?.message) as any;
+        
+        if (result?.then) {
+            result.then((resolvedData) => {
+                if(RECEIVER) {
+                    //console.log("sending back to SENDER", true);
+                    RECEIVER.postMessage(true);
+                }
+                sendData(resolvedData, ev.data.cb, ev.data.oneOff);
+            });
+        } else {
+            if(RECEIVER) {
+                //console.log("sending back to SENDER", true);
+                RECEIVER.postMessage(true);
+            }
+            sendData(result, ev.data.cb, ev.data.oneOff);
+        }
+    };
+
+    globalThis.onmessage = (ev) => {
+        // Handle different types of messages: RECEIVER, SENDER, TERMINATED, or data
+        
+        if(ev.data?.COMMAND) { //process commands for the worker system
+            const cmd = ev.data.COMMAND;
+            if(typeof cmd.SETLOOP === 'number') {
+                if(globalThis.WORKER.LOOP) clearTimeout(globalThis.WORKER.LOOP);
+                const loop = () => {
+                    onData(ev); globalThis.WORKER.LOOP = setTimeout(() => { loop(); }, cmd.SETLOOP);
+                }
+                loop();
+            }
+            if(cmd.SETANIM) {
+                if(globalThis.WORKER.ANIM) cancelAnimationFrame(globalThis.WORKER.ANIM);
+                const animate = () => {
+                    onData(ev); globalThis.WORKER.ANIM = requestAnimationFrame(() => { animate(); });
+                }
+                animate();
+            }
+            if(cmd.STOP) {
+                if(globalThis.WORKER.LOOP) clearTimeout(globalThis.WORKER.LOOP);
+                if(globalThis.WORKER.ANIM) cancelAnimationFrame(globalThis.WORKER.ANIM);
+            }
+            if(cmd.RECEIVER) {
+                const blocking = cmd.blocking;
+                if(!globalThis.WORKER.RECEIVERS) {
+                    globalThis.WORKER.RTCR = 0;
+                    globalThis.WORKER.RECEIVERS = {} as {[key:string]:MessagePort};
+                }
+                const _id = cmd.id;
+                globalThis.WORKER.RECEIVERS[_id] = cmd.RECEIVER;
+                globalThis.WORKER.RTCR++;
+
+                cmd.RECEIVER.onmessage = (event) => {
+                    onData(event, blocking ? cmd.RECEIVER : undefined);
+                }
+
+                cmd.RECEIVER.onerror = (er) => {
+                    delete globalThis.WORKER.RECEIVERS[_id];
+                }
+            } 
+            if(cmd.SENDER) {
+                if(!globalThis.WORKER.SENDERS) {
+                    globalThis.WORKER.PCTR = 0;
+                    globalThis.WORKER.SENDERS = {};
+                    globalThis.WORKER.BLOCKING = {};
+                    globalThis.WORKER.BLOCKED = {};
+                }
+                const blocking = cmd.blocking;
+                const _id = cmd.id ? cmd.id : globalThis.WORKER.PCTR;
+                globalThis.WORKER.SENDERS[_id] = cmd.SENDER;
+                globalThis.WORKER.PCTR++;
+
+                if(blocking) globalThis.WORKER.BLOCKING[_id] = true;
+
+                cmd.SENDER.onmessage = (event) => { 
+                    //console.log('RECEIVER sent back', event.data);
+                    if(globalThis.WORKER.BLOCKING[_id]) {
+                        globalThis.WORKER.BLOCKED[_id] = false; 
+                        //console.log('unblocked')
+                    }
+                }
+
+                cmd.SENDER.onerror = (er) => {
+                    delete globalThis.WORKER.SENDERS[_id];
+                }
+            }  
+            if (cmd.DELETED) {
+                delete globalThis.WORKER.RECEIVERS?.[cmd.DELETED];
+                delete globalThis.WORKER.SENDERS?.[cmd.DELETED];
+            } 
+        } else {
+            onData(ev);
+        }
+    };
+
+    globalThis.onerror = (er) => { console.error(er); }
+};
+
+export const workerFnString = initWorker.toString();
+
+export const generateWorkerURL = (operation, imports) => {
+    // Inner function that will run inside the worker
+    
+    // Convert the worker function to a string, including imports
+    let workerFnStringUpdated = workerFnString.replace(
+        '()=>{}', 
+        operation.toString()
+    );
+    let importString = getImports(imports);
+
+    //console.log(importString);
+
+    let workerString = `${importString}\n(${workerFnStringUpdated})()`;
+
+    // Create the worker
+    const blob = new Blob([workerString], { type: 'application/javascript' });
+    return URL.createObjectURL(blob);
+}
+
+
 
 
 export default threadop;
