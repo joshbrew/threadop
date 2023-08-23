@@ -497,90 +497,6 @@ async function parallelFFT(input, sampleRate = 44100, frequencyResolution = 1, d
 }
 
 
-//for comparison
-const dft = (sineWave = [], sampleRate = 250, frequencyResolution = 0.25) => {
-
-    const N = sineWave.length;
-    const NyquistLimit = Math.floor(sampleRate / 2);
-    const totalFreqs = Math.floor(NyquistLimit / frequencyResolution);
-    const Npadded = Math.ceil(sampleRate / frequencyResolution);  // Calculate the number of samples required for the desired resolution
-    
-    const TWOPI = 2 * 3.141592653589793;
-    const real = new Array(Npadded).fill(0);
-    const imag = new Array(Npadded).fill(0);
-    const amplitudes = new Array(Npadded);
-
-    const zerosToAdd = Npadded - N;
-    if(zerosToAdd < 0) {
-        throw new Error("Desired resolution is not achievable with current sample size.");
-    }
-
-    const paddedSineWave = zerosToAdd ? [...sineWave, ...Array(zerosToAdd).fill(0)] : sineWave;
-
-    
-    let orderedFrequencies;
-
-    if (totalFreqs % 2 === 0) {
-        // Even number of frequency bins
-        orderedFrequencies = [
-            ...new Array(totalFreqs).fill(0).map((x, i) => -NyquistLimit + i * frequencyResolution),
-            ...new Array(totalFreqs).fill(0).map((x, i) => i * frequencyResolution)
-        ];
-    } else {
-        // Odd number of frequency bins
-        orderedFrequencies = [
-            ...new Array(totalFreqs).fill(0).map((x, i) => -NyquistLimit + i * frequencyResolution),
-            ...new Array(totalFreqs + 1).fill(0).map((x, i) => i * frequencyResolution)
-        ];
-    }
-
-
-    for (let k = 0; k < Npadded; k++) {
-
-        //let limit = Math.abs(orderedFrequencies[k]); if (limit === 0) limit = 2; else limit = Math.floor(limit*2);
-
-        for (let j = 0; j < Npadded; j++) {
-            const shared = TWOPI * k * j / Npadded;
-            real[k] += paddedSineWave[j] * Math.cos(shared);
-            imag[k] -= paddedSineWave[j] * Math.sin(shared);
-        }
-
-        amplitudes[k] = 2 * (Math.sqrt(real[k] * real[k] + imag[k] * imag[k])) / Npadded;
-    }
-    
-    let orderedMagnitudes;
-
-    // Even number of frequency bins
-    if (totalFreqs % 2 === 0) {
-        orderedMagnitudes = [
-            ...amplitudes.slice(totalFreqs, 2 * totalFreqs),
-            ...amplitudes.slice(0, totalFreqs),
-        ];
-        orderedFrequencies = [
-            ...new Array(totalFreqs).fill(0).map((x, i) => -NyquistLimit + i * frequencyResolution),
-            ...new Array(totalFreqs).fill(0).map((x, i) => (i+1) * frequencyResolution)
-        ];
-    } else {
-        // Odd number of frequency bins
-        orderedMagnitudes = [
-            ...amplitudes.slice(totalFreqs, 2 * totalFreqs),
-            ...amplitudes.slice(0, totalFreqs + 1)
-        ];
-        orderedFrequencies = [
-            ...new Array(totalFreqs).fill(0).map((x, i) => -NyquistLimit + i * frequencyResolution),
-            ...new Array(totalFreqs + 1).fill(0).map((x, i) => i * frequencyResolution)
-        ];
-    }
-
-    return {
-        real,
-        imag,
-        freqs: orderedFrequencies,  // Compute frequency bins based on padded size
-        amplitudes: orderedMagnitudes
-    }
-}
-
-
 //Test
 
 document.body.insertAdjacentHTML('beforeend',`<div id="plot"></div>`);
@@ -636,25 +552,6 @@ setTimeout(()=>{
         console.time('parallelFFT with dynamic importing function (CPU)')
         parallelFFT(sineWave, sampleRate, 1, false).then(output => {
             console.timeEnd('parallelFFT with dynamic importing function (CPU)');
-            // console.time('DFT single threaded');
-            // const result = dft(sineWave2, sampleRate, 1);
-            // console.timeEnd('DFT single threaded');
-            // Plotly.newPlot('plot2', [{
-            //     x: result.freqs,
-            //     y: result.amplitudes,
-            //     type: 'scatter',
-            //     mode: 'lines+markers'
-            // }], {
-            //     title: 'Amplitude Spectrum',
-            //     xaxis: {
-            //         title: 'Frequency (Hz)'
-            //     },
-            //     yaxis: {
-            //         title: 'Amplitude'
-            //     }
-            // });
-            // console.log('PLOTTED')
-        
         });
         },1000);
     });
@@ -910,7 +807,8 @@ threadop(WGSLDFT).then((helper) => {
 
         console.time('WGSL DFT Thread Run 2')
         helper.run({inputArray, sampleRate, frequencyResolution:1}).then((output) => {
-            console.timeEnd('WGSL DFT Thread Run 2')
+            console.timeEnd('WGSL DFT Thread Run 2');
+            helper.terminate();
         });
     });
 })

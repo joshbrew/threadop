@@ -824,6 +824,7 @@ threadop(WGSLDFT).then((helper) => {
         console.time('WGSL DFT Thread Run 2')
         helper.run({inputArray, sampleRate, frequencyResolution:1}).then((output) => {
             console.timeEnd('WGSL DFT Thread Run 2')
+            helper.terminate();
         });
     });
 })
