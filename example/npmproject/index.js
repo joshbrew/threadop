@@ -510,89 +510,6 @@ async function parallelFFT(input, sampleRate = 44100, frequencyResolution = 1, d
 }
 
 
-//for comparison
-const dft = (sineWave = [], sampleRate = 250, frequencyResolution = 0.25) => {
-
-    const N = sineWave.length;
-    const NyquistLimit = Math.floor(sampleRate / 2);
-    const totalFreqs = Math.floor(NyquistLimit / frequencyResolution);
-    const Npadded = Math.ceil(sampleRate / frequencyResolution);  // Calculate the number of samples required for the desired resolution
-    
-    const TWOPI = 2 * 3.141592653589793;
-    const real = new Array(Npadded).fill(0);
-    const imag = new Array(Npadded).fill(0);
-    const amplitudes = new Array(Npadded);
-
-    const zerosToAdd = Npadded - N;
-    if(zerosToAdd < 0) {
-        throw new Error("Desired resolution is not achievable with current sample size.");
-    }
-
-    const paddedSineWave = zerosToAdd ? [...sineWave, ...Array(zerosToAdd).fill(0)] : sineWave;
-
-    
-    let orderedFrequencies;
-
-    if (totalFreqs % 2 === 0) {
-        // Even number of frequency bins
-        orderedFrequencies = [
-            ...new Array(totalFreqs).fill(0).map((x, i) => -NyquistLimit + i * frequencyResolution),
-            ...new Array(totalFreqs).fill(0).map((x, i) => i * frequencyResolution)
-        ];
-    } else {
-        // Odd number of frequency bins
-        orderedFrequencies = [
-            ...new Array(totalFreqs).fill(0).map((x, i) => -NyquistLimit + i * frequencyResolution),
-            ...new Array(totalFreqs + 1).fill(0).map((x, i) => i * frequencyResolution)
-        ];
-    }
-
-
-    for (let k = 0; k < Npadded; k++) {
-
-        //let limit = Math.abs(orderedFrequencies[k]); if (limit === 0) limit = 2; else limit = Math.floor(limit*2);
-
-        for (let j = 0; j < Npadded; j++) {
-            const shared = TWOPI * k * j / Npadded;
-            real[k] += paddedSineWave[j] * Math.cos(shared);
-            imag[k] -= paddedSineWave[j] * Math.sin(shared);
-        }
-
-        amplitudes[k] = 2 * (Math.sqrt(real[k] * real[k] + imag[k] * imag[k])) / Npadded;
-    }
-    
-    let orderedMagnitudes;
-
-    // Even number of frequency bins
-    if (totalFreqs % 2 === 0) {
-        orderedMagnitudes = [
-            ...amplitudes.slice(totalFreqs, 2 * totalFreqs),
-            ...amplitudes.slice(0, totalFreqs),
-        ];
-        orderedFrequencies = [
-            ...new Array(totalFreqs).fill(0).map((x, i) => -NyquistLimit + i * frequencyResolution),
-            ...new Array(totalFreqs).fill(0).map((x, i) => (i+1) * frequencyResolution)
-        ];
-    } else {
-        // Odd number of frequency bins
-        orderedMagnitudes = [
-            ...amplitudes.slice(totalFreqs, 2 * totalFreqs),
-            ...amplitudes.slice(0, totalFreqs + 1)
-        ];
-        orderedFrequencies = [
-            ...new Array(totalFreqs).fill(0).map((x, i) => -NyquistLimit + i * frequencyResolution),
-            ...new Array(totalFreqs + 1).fill(0).map((x, i) => i * frequencyResolution)
-        ];
-    }
-
-    return {
-        real,
-        imag,
-        freqs: orderedFrequencies,  // Compute frequency bins based on padded size
-        amplitudes: orderedMagnitudes
-    }
-}
-
 
 //Test
 
@@ -650,30 +567,269 @@ setTimeout(()=>{
         console.time('parallelFFT with dynamic importing function (CPU)')
         parallelFFT(sineWave, sampleRate, 1, false).then(output => {
             console.timeEnd('parallelFFT with dynamic importing function (CPU)');
-            // console.time('DFT single threaded');
-            // const result = dft(sineWave2, sampleRate, 1);
-            // console.timeEnd('DFT single threaded');
-            // Plotly.newPlot('plot2', [{
-            //     x: result.freqs,
-            //     y: result.amplitudes,
-            //     type: 'scatter',
-            //     mode: 'lines+markers'
-            // }], {
-            //     title: 'Amplitude Spectrum',
-            //     xaxis: {
-            //         title: 'Frequency (Hz)'
-            //     },
-            //     yaxis: {
-            //         title: 'Amplitude'
-            //     }
-            // });
-            // console.log('PLOTTED')
         
         });
         },1000);
     });
 
 },5000)
+
+
+
+// Example 11: WGSL shader for the DFT with re-use (way faster!)
+
+
+async function WGSLDFT({inputArray, sampleRate, frequencyResolution}) {
+    if(!self.DFT) {
+        class DFTProcessor {
+
+            static async create(device = null) {
+                if (!device) {
+                    const gpu = navigator.gpu;
+                    const adapter = await gpu.requestAdapter();
+                    device = await adapter.requestDevice();
+                }
+                const processor = new DFTProcessor();
+                await processor.init(device);
+                return processor;
+            }
+        
+            async init(device=null) {
+                this.device = device;
+                this.bindGroupLayout = this.device.createBindGroupLayout({
+                    entries: [
+                        {
+                            binding: 0,
+                            visibility: GPUShaderStage.COMPUTE,
+                            buffer: {
+                                type: 'read-only-storage'
+                            }
+                        },
+                        {
+                            binding: 1,
+                            visibility: GPUShaderStage.COMPUTE,
+                            buffer: {
+                                type: 'storage'
+                            }
+                        }
+                    ]
+                });
+        
+                this.pipelineLayout = this.device.createPipelineLayout({
+                    bindGroupLayouts: [this.bindGroupLayout]
+                });
+        
+                this.shaderModule = this.device.createShaderModule({
+                    code: `
+                
+        struct InputData {
+            values : array<f32>
+        }
+        
+        struct OutputData {
+            values: array<f32>
+        }
+        
+        @group(0) @binding(0)
+        var<storage, read> inputData: InputData;
+        
+        @group(0) @binding(1)
+        var<storage, read_write> outputData: OutputData;
+        
+        @compute @workgroup_size(256)
+        fn main(
+            @builtin(global_invocation_id) globalId: vec3<u32>
+        ) {
+            let N = arrayLength(&inputData.values);
+            let k = globalId.x;
+            var sum = vec2<f32>(0.0, 0.0);
+        
+            for (var n = 0u; n < N; n = n + 1u) {
+                let phase = 2.0 * 3.14159265359 * f32(k) * f32(n) / f32(N);
+                sum = sum + vec2<f32>(
+                    inputData.values[n] * cos(phase),
+                    -inputData.values[n] * sin(phase)
+                );
+            }
+        
+            let outputIndex = k * 2;
+            if (outputIndex + 1 < arrayLength(&outputData.values)) {
+                outputData.values[outputIndex] = sum.x;
+                outputData.values[outputIndex + 1] = sum.y;
+            }
+        }
+        
+        `
+                });
+        
+                this.computePipeline = this.device.createComputePipeline({
+                    layout: this.pipelineLayout,
+                    compute: {
+                        module: this.shaderModule,
+                        entryPoint: 'main'
+                    }
+                });
+            }
+        
+            process(inputArray, sampleRate, frequencyResolution) {
+        
+                const inputData = this.device.createBuffer({
+                    size: inputArray.byteLength,
+                    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+                    mappedAtCreation: true
+                });
+        
+                new Float32Array(inputData.getMappedRange()).set(inputArray);
+                inputData.unmap();
+        
+        
+                const outputData = this.device.createBuffer({
+                    size: inputArray.byteLength * 2,
+                    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST | GPUBufferUsage.COPY_SRC
+                });
+        
+                this.bindGroup = this.device.createBindGroup({
+                    layout: this.bindGroupLayout,
+                    entries: [
+                        {
+                            binding: 0,
+                            resource: {
+                                buffer: inputData
+                            }
+                        },
+                        {
+                            binding: 1,
+                            resource: {
+                                buffer: outputData
+                            }
+                        }
+                    ]
+                });
+        
+                const commandEncoder = this.device.createCommandEncoder();
+                const passEncoder = commandEncoder.beginComputePass();
+        
+                passEncoder.setPipeline(this.computePipeline);
+                passEncoder.setBindGroup(0, this.bindGroup);
+                passEncoder.dispatchWorkgroups(Math.ceil(inputArray.length / 64));
+        
+                passEncoder.end();
+        
+                const stagingBuffer = this.device.createBuffer({
+                    size: outputData.size,
+                    usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
+                });
+        
+                commandEncoder.copyBufferToBuffer(
+                    outputData, 0,
+                    stagingBuffer, 0,
+                    outputData.size
+                );
+        
+        
+                this.device.queue.submit([commandEncoder.finish()]);
+        
+                return new Promise((res) => {
+                    stagingBuffer.mapAsync(GPUMapMode.READ).then(() => {
+                        const mappedRange = stagingBuffer.getMappedRange();
+                        const rawResults = new Float32Array(mappedRange); 
+                        const copiedResults = new Float32Array(rawResults.length);
+                        
+                        copiedResults.set(rawResults); // Fast copy
+        
+                        stagingBuffer.unmap();
+        
+                        res(copiedResults);
+                    });
+                })
+                
+            }
+        }
+        
+
+        self.DFT = await DFTProcessor.create();
+    }
+
+    return self.DFT.process(inputArray, sampleRate, frequencyResolution);
+}
+
+const inputArray = new Float32Array(sampleRate); // 1 second of samples
+for (let i = 0; i < sampleRate; i++) {
+    inputArray[i] = amplitude * Math.sin(2 * Math.PI * frequency * i / sampleRate); // 440Hz
+}
+
+console.time('WGSL DFT Thread')
+threadop(WGSLDFT).then((helper) => {
+    helper.run({inputArray, sampleRate, frequencyResolution:1}).then((output) => {
+        console.timeEnd('WGSL DFT Thread')
+        //console.log('WGSLDFT Result', output); //unordered results
+
+        //console.log(rawResults)
+        function rearrangeDFTOutput(output) {
+            const halfLength = output.length / 2;
+            const rearranged = new Float32Array(output.length);
+
+            // Copy the negative frequencies (second half of the output) to the beginning of the rearranged array
+            rearranged.set(output.subarray(halfLength), 0);
+
+            // Copy the positive frequencies (first half of the output) to the end of the rearranged array
+            rearranged.set(output.subarray(0, halfLength), halfLength);
+
+            return rearranged;
+        }
+
+        const rearrangedResults = rearrangeDFTOutput(output);
+        
+        // Compute the magnitude of the results
+        const magnitudes = [];
+        for (let i = 0; i < rearrangedResults.length; i += 2) {
+            const real = rearrangedResults[i];
+            const imag = rearrangedResults[i + 1];
+            const magnitude = 4 * Math.sqrt(real * real + imag * imag) / rearrangedResults.length;
+            magnitudes.push(magnitude);
+        }
+
+        const frequencyBins = [];
+
+        const numSamples = inputArray.length;
+        const deltaF = sampleRate / numSamples; // Frequency resolution
+        for (let i = 0; i < numSamples / 2; i++) {
+            frequencyBins[i] = -sampleRate / 2 + i * deltaF;
+        }
+        for (let i = numSamples / 2; i < numSamples; i++) {
+            frequencyBins[i] = deltaF * (i - numSamples / 2);
+        }
+
+        const trace = {
+            x: frequencyBins,
+            y: magnitudes,
+            type: 'line'
+        };
+
+        document.body.insertAdjacentHTML('beforeend',`<div id="plot3"></div>`);
+
+        const layout = {
+            title: 'DFT Magnitude Spectrum',
+            xaxis: {
+                title: 'Frequency (Hz)'
+            },
+            yaxis: {
+                title: 'Magnitude'
+            }
+        };
+    
+        Plotly.newPlot('plot3', [trace], layout);
+
+
+        console.time('WGSL DFT Thread Run 2')
+        helper.run({inputArray, sampleRate, frequencyResolution:1}).then((output) => {
+            console.timeEnd('WGSL DFT Thread Run 2')
+        });
+    });
+})
+
+
+
 
 
 //------------------------------------------------
