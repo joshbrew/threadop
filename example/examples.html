@@ -291,7 +291,7 @@
                     callback:(data) => {console.log(data)},
                 }
             ).then((helper) => {
-                setTimeout(() => {helper.stop()},5000);
+                setTimeout(() => {helper.stop(); helper.terminate();},5000);
             });
 
 
@@ -414,7 +414,7 @@ async function threadfft(input) {
 
     if(even.length >= SAMPLE_THREAD_THRESHOLD) { // 25% faster
         [E,O] = await new Promise((res) => {
-            import(location.origin+'/example/npmproject/lib/threadop.esm.js').then(async (module) => { 
+            import(location.origin+'/npmproject/lib/threadop.esm.js').then(async (module) => { 
             //this is not the fastest way to instantiate modules in nested threads (better to use a compiled file) but it works
                 res(await Promise.all(
                     [
@@ -754,17 +754,17 @@ threadop(WGSLDFT).then((helper) => {
     helper.run({inputArray, sampleRate, frequencyResolution:1},[inputArray.buffer]).then((output) => {
         console.timeEnd('WGSL DFT Thread')
         //console.log('WGSLDFT Result', output); //unordered results
-
+        console.log(output);
         //console.log(rawResults)
         function rearrangeDFTOutput(output) {
-            const halfLength = output.length / 2;
-            const rearranged = new Float32Array(output.length);
+            const halfLength = output.message.length / 2;
+            const rearranged = new Float32Array(output.message.length);
 
             // Copy the negative frequencies (second half of the output) to the beginning of the rearranged array
-            rearranged.set(output.subarray(halfLength), 0);
+            rearranged.set(output.message.subarray(halfLength), 0);
 
             // Copy the positive frequencies (first half of the output) to the end of the rearranged array
-            rearranged.set(output.subarray(0, halfLength), halfLength);
+            rearranged.set(output.message.subarray(0, halfLength), halfLength);
 
             return rearranged;
         }
