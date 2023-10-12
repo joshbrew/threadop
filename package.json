@@ -1,6 +1,6 @@
 {
   "name": "threadop",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "description": "Create multithreaded pipelines (incl. esm imports) in a single script file with a clear, minimal workflow",
   "main": "./dist/threadop.js",
   "module": "./dist/threadop.esm.js",
@@ -26,7 +26,7 @@
     "threadpool"
   ],
   "author": "",
-  "license": "AGPL-3.0-or-later",
+  "license": "LGPL-3.0-or-later",
   "dependencies": {},
   "devDependencies": {},
   "nodemonConfig": {
