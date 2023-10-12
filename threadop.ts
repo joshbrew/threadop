@@ -13,7 +13,7 @@ export type ImportsInput =
     | ModuleImport;      // Object describing imports e.g. { './mod.js': { useState: true } }
 
 export type WorkerHelper = {
-    run: (message: any, transfer?: Transferable[]) => Promise<any>;
+    run: (message: any, transfer?: Transferable[], overridePort?:boolean|string|'both') => Promise<any>;
     terminate: () => void;
     addPort: (port: Worker) => void;
     addCallback: (callback?: (data: any) => void, oneOff?: boolean) => number;
@@ -26,7 +26,7 @@ export type WorkerHelper = {
 }
 
 export type WorkerPoolHelper = {
-    run: (message: any|any[], transfer?: (Transferable[])|((Transferable[])[]), workerId?:number|string) => Promise<any>;
+    run: (message: any|any[], transfer?: (Transferable[])|((Transferable[])[]), overridePort?:boolean|string|'both', workerId?:number|string) => Promise<any>;
     terminate: (workerId?:number|string) => void;
     addPort: (port: Worker, workerId?:number|string) => boolean|boolean[];
     addCallback: (callback?: (data: any) => void, oneOff?: boolean, workerId?:number|string) => number|number[];
@@ -158,10 +158,10 @@ export function threadop(
                 console.error(new Error("Worker encountered an error: " + ev.message));
             };
 
-            let mkcb = (msg, tx) => {
+            let mkcb = (msg, tx, overridePort) => {
                 return new Promise((res,rej) => {
-                    if((worker as any).PORTS) {
-                        worker.postMessage({message:msg}, tx);
+                    if(!overridePort && (worker as any).PORTS) {
+                        worker.postMessage({message:msg, overridePort}, tx);
                         res(true);
                     } else {
                         if(blocking) {
@@ -176,14 +176,14 @@ export function threadop(
                                 res(data); 
                             }
                         }
-                        worker.postMessage({message:msg, cb}, tx);
+                        worker.postMessage({message:msg, cb, overridePort}, tx);
                     }
                 });
             }
 
             const helper = {
-                run: (message, transfer) => { //return a promise, will return data if a thread operation 
-                    return mkcb(message,transfer);
+                run: (message:any, transfer:Transferable[], overridePort?:boolean|string|'both') => { //return a promise, will return data if a thread operation 
+                    return mkcb(message,transfer,overridePort);
                 },
                 terminate: () => {
                     URL.revokeObjectURL(workerURL); // This line is important for garbage collection even if you reuse the worker
@@ -195,7 +195,7 @@ export function threadop(
                         (worker as any).PORTS.forEach(withPort)
                     }
                 },
-                addPort: (port) => setupPort(worker, port, (worker as any).id, blocking), //add a message port to send data to a second worker instead of to main thread, can send to multiple 
+                addPort: (port) => setupPort(worker, port, blocking), //add a message port to send data to a second worker instead of to main thread, can send to multiple 
                 addCallback:(callback=(data)=> {}, oneOff) => { //response to worker data
                     let cb = Math.random(); 
                     callbacks[cb] = oneOff ? (data) => { 
@@ -251,8 +251,8 @@ export function threadop(
                 keys.forEach((id,i) => {
                     const worker = workers[id];
                     if(Array.isArray(port)) {
-                        setupPort(worker, port[i], (worker as any).id, blocking); //1 thread -> 1 port
-                    } else setupPort(worker, port, (worker as any).id, blocking);
+                        setupPort(worker, port[i], blocking); //1 thread -> 1 port
+                    } else setupPort(worker, port, blocking);
                 })
             }
 
@@ -305,18 +305,18 @@ export function threadop(
                     workers,
                     helpers:{} as {[key:string]:WorkerHelper},
                     keys,
-                    run:(message:any|any[], transfer:(Transferable[])|((Transferable[])[]), workerId?:string|number)=>{
+                    run:(message:any|any[], transfer:(Transferable[])|((Transferable[])[]), overridePort?:boolean|string|'both', workerId?:string|number)=>{
                         if(workerId) {
                             helper.helpers[workerId]?.run(message, transfer as Transferable[]);
                         } else {
                             if(Array.isArray(message)) { //array messages will be interpreted as being divided up in the threadpool on rotation
                                 const len = message.length;
                                 for(let i = 0; i < len; i++) {
-                                    helper.helpers[keys[threadRot]].run(message[i], transfer[i] as Transferable[]);
+                                    helper.helpers[keys[threadRot]].run(message[i], transfer[i] as Transferable[], overridePort);
                                     threadRot++; if(threadRot >= keys.length) threadRot = 0; //reset rotation
                                 }
                             } else {
-                                helper.helpers[keys[threadRot]].run(message, transfer as Transferable[]);
+                                helper.helpers[keys[threadRot]].run(message, transfer as Transferable[], overridePort);
                                 threadRot++; if(threadRot >= keys.length) threadRot = 0; //reset rotation
                             }
                         }
@@ -407,8 +407,9 @@ export function threadop(
             (worker as any).id = id;
             // Otherwise, set up any provided ports and return a control object
             if (port) {
-                if(Array.isArray(port)) port.map((w)=>{setupPort(worker, w, id, blocking)})
-                else setupPort(worker, port, id, blocking);
+                if(!(port as any).id) (port as any).id = Math.random();
+                if(Array.isArray(port)) port.map((w)=>{setupPort(worker, w, blocking)})
+                else setupPort(worker, port, blocking);
             }
 
             // If a one-off message is provided, post it to the worker and set up the handlers, then terminate after the response is met
@@ -496,10 +497,12 @@ function getImports(imports) {
 
 
 
-function setupPort(worker, port, id, blocking) {
+function setupPort(worker, port, blocking) {
     const channel = new MessageChannel();
-    worker.postMessage({ COMMAND:{SENDER: channel.port1, id, blocking} }, [channel.port1]);
-    port.postMessage({ COMMAND:{RECEIVER: channel.port2, id, blocking} }, [channel.port2]);	
+    if(!worker.id) worker.id = Math.random();
+    if(!port.id) port.id = Math.random();
+    worker.postMessage({ COMMAND:{SENDER: channel.port1, id:port.id, blocking} }, [channel.port1]);
+    port.postMessage({ COMMAND:{RECEIVER: channel.port2, id:worker.id, blocking} }, [channel.port2]);	
     
     if(!worker.PORTS) worker.PORTS = [];
     worker.PORTS.push(port);
@@ -513,22 +516,29 @@ export const initWorker = (inputFunction=()=>{}) => {
     //console.log('thread!');
     globalThis.WORKER = {};
 
-    const sendData = (data:any, cb:number, oneOff:boolean) => {
-        if (globalThis.WORKER.SENDERS) { //forward to message ports instead of to main thread
-            for(const key in globalThis.WORKER.SENDERS) {
-                if(globalThis.WORKER.BLOCKING[key]) {
-                    if(globalThis.WORKER.BLOCKED[key]) {
-                        console.error("Thread Blocked: " + key);
-                        continue;
+    const sendData = (data:any, cb:number, oneOff:boolean, overridePort:boolean|string|'both') => {
+        if (globalThis.WORKER.SENDERS && (overridePort !== true)) { //forward to message ports instead of to main thread
+            if(typeof overridePort === 'string' && globalThis.WORKER.SENDERS[overridePort]) {
+                if(data?.message)  globalThis.WORKER.SENDERS[overridePort].postMessage({message:data.message}, data.transfer);
+                else globalThis.WORKER.SENDERS[overridePort].postMessage({message:data});
+            } 
+            else {
+                for(const key in globalThis.WORKER.SENDERS) {
+                    if(globalThis.WORKER.BLOCKING[key]) {
+                        if(globalThis.WORKER.BLOCKED[key]) {
+                            console.error("Thread Blocked: " + key);
+                            continue;
+                        }
+                        globalThis.WORKER.BLOCKED[key] = true;
                     }
-                    globalThis.WORKER.BLOCKED[key] = true;
+                    if(data?.message)  globalThis.WORKER.SENDERS[key].postMessage({message:data.message}, data.transfer);
+                    else globalThis.WORKER.SENDERS[key].postMessage({message:data});
                 }
-                if(data?.message && data?.transfer)  globalThis.WORKER.SENDERS[key].postMessage({message:data.message, cb}, data.transfer);
-                else globalThis.WORKER.SENDERS[key].postMessage({message:data, cb});
                 if(oneOff) postMessage(true); //need to tell main thread to quit
             }
-        } else {
-            if(data?.message && data?.transfer) postMessage({message:data.message, cb}, data.transfer); //specifically recognized this output format
+        } 
+        if(!globalThis.WORKER.SENDERS || (overridePort === true || (typeof overridePort === 'string' && !globalThis.WORKER.SENDERS[overridePort]))) { //if we overridePort with a specific workerId, then don't pass back to main thread as we imply we want a specific port to be talked to
+            if(data?.message) postMessage({message:data.message, cb}, data.transfer); //specifically recognized this output format
             else postMessage({message:data, cb});
         }
     }
@@ -543,14 +553,14 @@ export const initWorker = (inputFunction=()=>{}) => {
                     //console.log("sending back to SENDER", true);
                     RECEIVER.postMessage(true);
                 }
-                sendData(resolvedData, ev.data.cb, ev.data.oneOff);
+                sendData(resolvedData, ev.data.cb, ev.data.oneOff, ev.data.overridePort);
             });
         } else {
             if(RECEIVER) {
                 //console.log("sending back to SENDER", true);
                 RECEIVER.postMessage(true);
             }
-            sendData(result, ev.data.cb, ev.data.oneOff);
+            sendData(result, ev.data.cb, ev.data.oneOff, ev.data.overridePort);
         }
     };
 

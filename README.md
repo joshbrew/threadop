@@ -84,7 +84,7 @@ type ImportsInput =
     | ModuleImport;      // Object describing imports e.g. { './mod.js': { useState: true } }
 
 type WorkerHelper = {
-    run: (message: any, transfer?: Transferable[]) => Promise<any>;
+    run: (message: any, transfer?: Transferable[], overridePort?:boolean|string|'both') => Promise<any>;
     terminate: () => void;
     addPort: (port: Worker) => void;
     addCallback: (callback?: (data: any) => void, oneOff?: boolean) => number;
@@ -97,7 +97,7 @@ type WorkerHelper = {
 }
 
 type WorkerPoolHelper = {
-    run: (message: any|any[], transfer?: (Transferable[])|((Transferable[])[]), workerId?:number|string) => Promise<any>;
+    run: (message: any|any[], transfer?: (Transferable[])|((Transferable[])[]), overridePort?:boolean|string|'both', workerId?:number|string) => Promise<any>;
     terminate: (workerId?:number|string) => void;
     addPort: (port: Worker, workerId?:number|string) => boolean|boolean[];
     addCallback: (callback?: (data: any) => void, oneOff?: boolean, workerId?:number|string) => number|number[];
@@ -112,10 +112,9 @@ type WorkerPoolHelper = {
     callbacks: {[key: number]: (data: any, cb?: number) => void};
 }
 
-
 //overloads
 // When the message is defined, the function returns a Promise<any>.
-export function threadop(
+function threadop(
     operation?:string|Blob|((data)=>void), 
     options?: {
         imports?: ImportsInput, 
