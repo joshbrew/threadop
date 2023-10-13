@@ -39,7 +39,7 @@ export type WorkerPoolHelper = {
         [key: number]: (data: any, cb?: number) => void;
     };
 };
-export declare function threadop(operation?: string | Blob | ((data: any) => void), options?: {
+export declare function threadop(operation?: string | Blob | ((data: any) => (any | Promise<any>)), options?: {
     imports?: ImportsInput;
     message: any;
     transfer?: Transferable[];
@@ -49,7 +49,7 @@ export declare function threadop(operation?: string | Blob | ((data: any) => voi
     animate?: boolean;
     callback?: (data: any) => void;
 }): Promise<any>;
-export declare function threadop(operation?: string | Blob | ((data: any) => void), options?: {
+export declare function threadop(operation?: string | Blob | ((data: any) => (any | Promise<any>)), options?: {
     imports?: ImportsInput;
     message: any | any[];
     transfer?: Transferable[];
@@ -60,7 +60,7 @@ export declare function threadop(operation?: string | Blob | ((data: any) => voi
     animate?: boolean;
     callback?: (data: any) => void;
 }): Promise<any[]>;
-export declare function threadop(operation?: string | Blob | ((data: any) => void), options?: {
+export declare function threadop(operation?: string | Blob | ((data: any) => (any | Promise<any>)), options?: {
     imports?: ImportsInput;
     transfer?: Transferable[];
     port?: Worker | Worker[];
@@ -69,7 +69,7 @@ export declare function threadop(operation?: string | Blob | ((data: any) => voi
     animate?: boolean;
     callback?: (data: any) => void;
 }): Promise<WorkerHelper>;
-export declare function threadop(operation?: string | Blob | ((data: any) => void), options?: {
+export declare function threadop(operation?: string | Blob | ((data: any) => (any | Promise<any>)), options?: {
     imports?: ImportsInput;
     transfer?: Transferable[];
     port?: Worker | Worker[];
@@ -79,7 +79,7 @@ export declare function threadop(operation?: string | Blob | ((data: any) => voi
     animate?: boolean;
     callback?: (data: any) => void;
 }): Promise<WorkerPoolHelper>;
-export declare const initWorker: (inputFunction?: () => void) => void;
+export declare const initWorker: (inputFunction?: (data: any) => (any | Promise<any>)) => void;
 export declare const workerFnString: string;
 export declare const generateWorkerURL: (operation: any, imports: any) => string;
 export default threadop;

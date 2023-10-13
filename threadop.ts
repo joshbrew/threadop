@@ -44,7 +44,7 @@ export type WorkerPoolHelper = {
 //overloads
 // When the message is defined, the function returns a Promise<any>.
 export function threadop(
-    operation?:string|Blob|((data)=>void), 
+    operation?:string|Blob|((data)=>(any|Promise<any>)), 
     options?: {
         imports?: ImportsInput, 
         message: any, 
@@ -59,7 +59,7 @@ export function threadop(
 
 // When the message is defined and pool is defined, the function returns a Promise<any[]>.
 export function threadop(
-    operation?:string|Blob|((data)=>void), 
+    operation?:string|Blob|((data)=>(any|Promise<any>)), 
     options?: {
         imports?: ImportsInput, 
         message: any|any[], //array inputs interpreted as per-thread inputs, can be longer than the number of threads
@@ -75,7 +75,7 @@ export function threadop(
 
 // When the message isn't defined, the function returns a Promise<WorkerHelper>.
 export function threadop(
-    operation?:string|Blob|((data)=>void), 
+    operation?:string|Blob|((data)=>(any|Promise<any>)), 
     options?: {
         imports?: ImportsInput, 
         transfer?: Transferable[], 
@@ -89,7 +89,7 @@ export function threadop(
 
 // When the message isn't defined and pool is defined, the function returns a Promise<WorkerPoolHelper>.
 export function threadop(
-    operation?:string|Blob|((data)=>void), 
+    operation?:string|Blob|((data)=>(any|Promise<any>)), 
     options?: {
         imports?: ImportsInput, 
         transfer?: Transferable[], 
@@ -104,7 +104,7 @@ export function threadop(
 
 //implementation
 export function threadop(
-    operation:string|Blob|((data)=>void) = (data) => data, 
+    operation:string|Blob|((data)=>(any|Promise<any>)) = (data) => data, 
     { 
         imports, //ImportsInput
         message, 
@@ -511,7 +511,7 @@ function setupPort(worker, port, blocking) {
 }
 
 //globalThis.threadop = threadop;
-export const initWorker = (inputFunction=()=>{}) => {
+export const initWorker = (inputFunction:((data)=>(any|Promise<any>))=()=>{}) => {
 
     //console.log('thread!');
     globalThis.WORKER = {};
