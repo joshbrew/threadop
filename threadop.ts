@@ -520,11 +520,12 @@ export const initWorker = (inputFunction:((data)=>(any|Promise<any>))=()=>{}) =>
 
     const sendData = (data:any, cb:number, oneOff:boolean, overridePort:boolean|number|string|'both') => {
         if (globalThis.WORKER.SENDERS && (overridePort !== true)) { //forward to message ports instead of to main thread
-            if(typeof overridePort === 'string' && globalThis.WORKER.SENDERS[overridePort]) {
-                if(data?.message)  globalThis.WORKER.SENDERS[overridePort].postMessage({message:data.message}, data.transfer);
-                else globalThis.WORKER.SENDERS[overridePort].postMessage({message:data});
-            } 
-            else {
+            if(overridePort !== 'both') {
+                    if(globalThis.WORKER.SENDERS[overridePort as string]) {
+                    if(data?.message)  globalThis.WORKER.SENDERS[overridePort as string].postMessage({message:data.message}, data.transfer);
+                    else globalThis.WORKER.SENDERS[overridePort as string].postMessage({message:data});
+                }
+            } else {
                 for(const key in globalThis.WORKER.SENDERS) {
                     if(globalThis.WORKER.BLOCKING[key]) {
                         if(globalThis.WORKER.BLOCKED[key]) {
@@ -539,7 +540,7 @@ export const initWorker = (inputFunction:((data)=>(any|Promise<any>))=()=>{}) =>
                 if(oneOff) postMessage(true); //need to tell main thread to quit
             }
         } 
-        if(!globalThis.WORKER.SENDERS || (overridePort === true || (typeof overridePort === 'string' && !globalThis.WORKER.SENDERS[overridePort]))) { //if we overridePort with a specific workerId, then don't pass back to main thread as we imply we want a specific port to be talked to
+        if(!globalThis.WORKER.SENDERS || (overridePort === true || (overridePort !== 'both' && !globalThis.WORKER.SENDERS[overridePort as string]))) { //if we overridePort with a specific workerId, then don't pass back to main thread as we imply we want a specific port to be talked to
             if(data?.message) postMessage({message:data.message, cb}, data.transfer); //specifically recognized this output format
             else postMessage({message:data, cb});
         }
