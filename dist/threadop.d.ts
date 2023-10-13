@@ -5,7 +5,7 @@ export type ModuleImport = {
 };
 export type ImportsInput = string | string[] | ModuleImport;
 export type WorkerHelper = {
-    run: (message: any, transfer?: Transferable[], overridePort?: boolean | string | 'both') => Promise<any>;
+    run: (message: any, transfer?: Transferable[], overridePort?: boolean | number | string | 'both') => Promise<any>;
     terminate: () => void;
     addPort: (port: Worker) => void;
     addCallback: (callback?: (data: any) => void, oneOff?: boolean) => number;
@@ -14,12 +14,13 @@ export type WorkerHelper = {
     setAnimation: (message: any, transfer: any) => void;
     stop: () => void;
     worker: Worker;
+    id: number;
     callbacks: {
         [key: number]: (data: any, cb?: number) => void;
     };
 };
 export type WorkerPoolHelper = {
-    run: (message: any | any[], transfer?: (Transferable[]) | ((Transferable[])[]), overridePort?: boolean | string | 'both', workerId?: number | string) => Promise<any>;
+    run: (message: any | any[], transfer?: (Transferable[]) | ((Transferable[])[]), overridePort?: boolean | number | string | 'both', workerId?: number | string) => Promise<any>;
     terminate: (workerId?: number | string) => void;
     addPort: (port: Worker, workerId?: number | string) => boolean | boolean[];
     addCallback: (callback?: (data: any) => void, oneOff?: boolean, workerId?: number | string) => number | number[];

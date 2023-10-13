@@ -13,7 +13,7 @@ export type ImportsInput =
     | ModuleImport;      // Object describing imports e.g. { './mod.js': { useState: true } }
 
 export type WorkerHelper = {
-    run: (message: any, transfer?: Transferable[], overridePort?:boolean|string|'both') => Promise<any>;
+    run: (message: any, transfer?: Transferable[], overridePort?:boolean|number|string|'both') => Promise<any>;
     terminate: () => void;
     addPort: (port: Worker) => void;
     addCallback: (callback?: (data: any) => void, oneOff?: boolean) => number;
@@ -22,11 +22,12 @@ export type WorkerHelper = {
     setAnimation: (message, transfer) => void,      //run an animation function, e.g. transfer a canvas with parameters
     stop: () => void, 
     worker: Worker;
+    id:number,
     callbacks: {[key: number]: (data: any, cb?: number) => void};
 }
 
 export type WorkerPoolHelper = {
-    run: (message: any|any[], transfer?: (Transferable[])|((Transferable[])[]), overridePort?:boolean|string|'both', workerId?:number|string) => Promise<any>;
+    run: (message: any|any[], transfer?: (Transferable[])|((Transferable[])[]), overridePort?:boolean|number|string|'both', workerId?:number|string) => Promise<any>;
     terminate: (workerId?:number|string) => void;
     addPort: (port: Worker, workerId?:number|string) => boolean|boolean[];
     addCallback: (callback?: (data: any) => void, oneOff?: boolean, workerId?:number|string) => number|number[];
@@ -182,7 +183,7 @@ export function threadop(
             }
 
             const helper = {
-                run: (message:any, transfer:Transferable[], overridePort?:boolean|string|'both') => { //return a promise, will return data if a thread operation 
+                run: (message:any, transfer:Transferable[], overridePort?:boolean|number|string|'both') => { //return a promise, will return data if a thread operation 
                     return mkcb(message,transfer,overridePort);
                 },
                 terminate: () => {
@@ -216,7 +217,8 @@ export function threadop(
                     worker.postMessage({COMMAND:{STOP:true}});
                 },
                 worker,
-                callbacks
+                callbacks,
+                id:(worker as any).id
             } as WorkerHelper;
 
             if(callback) helper.addCallback(callback);
@@ -305,7 +307,7 @@ export function threadop(
                     workers,
                     helpers:{} as {[key:string]:WorkerHelper},
                     keys,
-                    run:(message:any|any[], transfer:(Transferable[])|((Transferable[])[]), overridePort?:boolean|string|'both', workerId?:string|number)=>{
+                    run:(message:any|any[], transfer:(Transferable[])|((Transferable[])[]), overridePort?:boolean|number|string|'both', workerId?:string|number)=>{
                         if(workerId) {
                             helper.helpers[workerId]?.run(message, transfer as Transferable[]);
                         } else {
@@ -516,7 +518,7 @@ export const initWorker = (inputFunction:((data)=>(any|Promise<any>))=()=>{}) =>
     //console.log('thread!');
     globalThis.WORKER = {};
 
-    const sendData = (data:any, cb:number, oneOff:boolean, overridePort:boolean|string|'both') => {
+    const sendData = (data:any, cb:number, oneOff:boolean, overridePort:boolean|number|string|'both') => {
         if (globalThis.WORKER.SENDERS && (overridePort !== true)) { //forward to message ports instead of to main thread
             if(typeof overridePort === 'string' && globalThis.WORKER.SENDERS[overridePort]) {
                 if(data?.message)  globalThis.WORKER.SENDERS[overridePort].postMessage({message:data.message}, data.transfer);
