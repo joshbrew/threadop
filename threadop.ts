@@ -253,7 +253,10 @@ export function threadop(
                 keys.forEach((id,i) => {
                     const worker = workers[id];
                     if(Array.isArray(port)) {
-                        setupPort(worker, port[i], blocking); //1 thread -> 1 port
+                        if(port.length === keys.length) setupPort(worker, port[i], blocking);
+                        else port.forEach((p) => {
+                            setupPort(worker, p, blocking); //1 thread -> 1 port
+                        })
                     } else setupPort(worker, port, blocking);
                 })
             }
@@ -486,7 +489,7 @@ function getImports(imports) {
             } else if (typeof value === 'boolean' && value) {
                 return `import '${key}'`;
             } else {
-                const namedImports = Object.entries(value).map(([importName, alias]) => {
+                const namedImports = Object.entries(value as any).map(([importName, alias]) => {
                     return typeof alias === 'string' ? `${importName} as ${alias}` : importName;
                 }).join(', ');
                 return `import { ${namedImports} } from '${key}';`;
@@ -520,10 +523,10 @@ export const initWorker = (inputFunction:((data)=>(any|Promise<any>))=()=>{}) =>
 
     const sendData = (data:any, cb:number, oneOff:boolean, overridePort:boolean|number|string|'both') => {
         if (globalThis.WORKER.SENDERS && (overridePort !== true)) { //forward to message ports instead of to main thread
-            if(overridePort !== 'both') {
+            if(overridePort !== undefined && overridePort !== 'both') {
                 if(globalThis.WORKER.SENDERS[overridePort as string]) {
-                    if(data?.message)  globalThis.WORKER.SENDERS[overridePort as string].postMessage({message:data.message}, data.transfer);
-                    else globalThis.WORKER.SENDERS[overridePort as string].postMessage({message:data});
+                    if(data?.message) globalThis.WORKER.SENDERS[overridePort as string].postMessage({message:data.message, overridePort:data?.overridePort}, data.transfer);
+                    else globalThis.WORKER.SENDERS[overridePort as string].postMessage({message:data, overridePort:data?.overridePort});
                 }
             } else {
                 for(const key in globalThis.WORKER.SENDERS) {
@@ -533,23 +536,22 @@ export const initWorker = (inputFunction:((data)=>(any|Promise<any>))=()=>{}) =>
                             continue;
                         }
                         globalThis.WORKER.BLOCKED[key] = true;
-                    }
-                    if(data?.message)  globalThis.WORKER.SENDERS[key].postMessage({message:data.message}, data.transfer);
-                    else globalThis.WORKER.SENDERS[key].postMessage({message:data});
+                    } 
+                    if(data?.message) globalThis.WORKER.SENDERS[key].postMessage({message:data.message, overridePort:data?.overridePort}, data.transfer);
+                    else globalThis.WORKER.SENDERS[key].postMessage({message:data, overridePort:data?.overridePort});
                 }
                 if(oneOff) postMessage(true); //need to tell main thread to quit
             }
         } 
         if(!globalThis.WORKER.SENDERS || (overridePort === true || (overridePort === 'both'))) { //if we overridePort with a specific workerId, then don't pass back to main thread as we imply we want a specific port to be talked to
-            if(data?.message) postMessage({message:data.message, cb}, data.transfer); //specifically recognized this output format
-            else postMessage({message:data, cb});
+            if(data?.message) postMessage({message:data.message, cb, overridePort:data?.overridePort}, data.transfer); //specifically recognized this output format
+            else postMessage({message:data, cb, overridePort:data?.overridePort});
         }
     }
 
     const onData = (ev:any, RECEIVER?:MessagePort) => {
         //@ts-ignore
         let result = (inputFunction)(ev.data?.message) as any;
-        
         if (result?.then) {
             result.then((resolvedData) => {
                 if(RECEIVER) {
