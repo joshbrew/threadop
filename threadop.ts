@@ -666,7 +666,7 @@ export const generateWorkerURL = (operation, imports) => {
     //console.log(importString);
 
     let workerString = `${importString}\n\n(${workerFnStringUpdated})()`;
-    console.log(workerString);
+    //console.log(workerString);
     // Create the worker
     const blob = new Blob([workerString], { type: 'application/javascript' });
     return URL.createObjectURL(blob);
