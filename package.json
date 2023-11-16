@@ -1,6 +1,6 @@
 {
   "name": "threadop",
-  "version": "1.5.3",
+  "version": "1.5.4",
   "description": "Create multithreaded pipelines (incl. esm imports) in a single script file with a clear, minimal workflow",
   "main": "./dist/threadop.js",
   "module": "./dist/threadop.esm.js",

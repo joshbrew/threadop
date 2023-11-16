@@ -523,7 +523,8 @@ export const initWorker = (inputFunction:((data)=>(any|Promise<any>))=()=>{}) =>
 
     //console.log('thread!');
     globalThis.WORKER = {};
-
+    inputFunction = inputFunction.bind(globalThis.WORKER); //give it a dedicated scope
+    
     const sendData = (data:any, cb:number, oneOff:boolean, overridePort:boolean|number|string|'both') => {
         if (globalThis.WORKER.SENDERS && (overridePort !== true)) { //forward to message ports instead of to main thread
             if(overridePort !== undefined && overridePort !== 'both') {
