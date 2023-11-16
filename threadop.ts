@@ -145,7 +145,6 @@ export function threadop(
         } else {
             workerURL = generateWorkerURL(operation, imports);
         }
-
         const WorkerHelper = (worker) => {
 
             let callbacks = {};
@@ -312,17 +311,21 @@ export function threadop(
                     keys,
                     run:(message:any|any[], transfer:(Transferable[])|((Transferable[])[]), overridePort?:boolean|number|string|'both', workerId?:string|number)=>{
                         if(workerId) {
-                            helper.helpers[workerId]?.run(message, transfer as Transferable[]);
+                            return helper.helpers[workerId]?.run(message, transfer as Transferable[]);
                         } else {
                             if(Array.isArray(message)) { //array messages will be interpreted as being divided up in the threadpool on rotation
                                 const len = message.length;
+                                let runs = [] as Promise<any>[];
                                 for(let i = 0; i < len; i++) {
-                                    helper.helpers[keys[threadRot]].run(message[i], transfer[i] as Transferable[], overridePort);
+                                    let run = helper.helpers[keys[threadRot]].run(message[i], transfer[i] as Transferable[], overridePort);
                                     threadRot++; if(threadRot >= keys.length) threadRot = 0; //reset rotation
+                                    runs.push(run);
                                 }
+                                return runs;
                             } else {
-                                helper.helpers[keys[threadRot]].run(message, transfer as Transferable[], overridePort);
+                                let run = helper.helpers[keys[threadRot]].run(message, transfer as Transferable[], overridePort);
                                 threadRot++; if(threadRot >= keys.length) threadRot = 0; //reset rotation
+                                return run;
                             }
                         }
                     },
@@ -662,8 +665,8 @@ export const generateWorkerURL = (operation, imports) => {
 
     //console.log(importString);
 
-    let workerString = `${importString}\n(${workerFnStringUpdated})()`;
-
+    let workerString = `${importString}\n\n(${workerFnStringUpdated})()`;
+    console.log(workerString);
     // Create the worker
     const blob = new Blob([workerString], { type: 'application/javascript' });
     return URL.createObjectURL(blob);
