@@ -22,7 +22,9 @@ Create multithreaded pipelines (with esm imports) in a single script file with a
 
 Instantiate threads from generic functions (with imports!) or from URLS i.e. worker file locations or Blobs.
 
-#### List of examples:
+## List of examples:
+
+#### [Example WONNX video processing app](https://github.com/joshbrew/cameraId-wonnx-wasm)
 
 - [Example 1: One-off usage](#example-1-one-off-usage)
 - [Example 2: Repeat operations](#example-2-repeat-operations)
