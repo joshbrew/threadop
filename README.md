@@ -6,7 +6,7 @@
 ![threadop-downloads](https://img.shields.io/npm/dt/threadop.svg)
 ![threadop-l](https://img.shields.io/npm/l/threadop)
 
-### [Example](threadop.netlify.app)
+### [Example](https://threadop.netlify.app)
 
 ## Description
 
