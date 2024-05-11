@@ -47,7 +47,7 @@ export type WorkerPoolHelper = {
 export declare function threadop(operation?: string | Blob | ((data: any) => (any | Promise<any>)), options?: {
     imports?: ImportsInput;
     functions?: {
-        [key: string]: Function | string;
+        [key: string]: Function;
     };
     message: any;
     transfer?: Transferable[];
@@ -60,7 +60,7 @@ export declare function threadop(operation?: string | Blob | ((data: any) => (an
 export declare function threadop(operation?: string | Blob | ((data: any) => (any | Promise<any>)), options?: {
     imports?: ImportsInput;
     functions?: {
-        [key: string]: Function | string;
+        [key: string]: Function;
     };
     message: any | any[];
     transfer?: Transferable[];
@@ -74,7 +74,7 @@ export declare function threadop(operation?: string | Blob | ((data: any) => (an
 export declare function threadop(operation?: string | Blob | ((data: any) => (any | Promise<any>)), options?: {
     imports?: ImportsInput;
     functions?: {
-        [key: string]: Function | string;
+        [key: string]: Function;
     };
     transfer?: Transferable[];
     port?: Worker | Worker[];
@@ -86,7 +86,7 @@ export declare function threadop(operation?: string | Blob | ((data: any) => (an
 export declare function threadop(operation?: string | Blob | ((data: any) => (any | Promise<any>)), options?: {
     imports?: ImportsInput;
     functions?: {
-        [key: string]: Function | string;
+        [key: string]: Function;
     };
     transfer?: Transferable[];
     port?: Worker | Worker[];
@@ -101,7 +101,7 @@ export declare const initWorker: (inputFunction?: ((data) => (any | Promise<any>
 }) => void;
 export declare const workerFnString: string;
 export declare const generateWorkerURL: (operation: Function, imports: any, functionSet?: {
-    [key: string]: Function | string;
+    [key: string]: Function;
 }) => string;
 export declare let recursivelyStringifyFunctions: (obj: {
     [key: string]: any;

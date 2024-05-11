@@ -52,7 +52,7 @@ export function threadop(
     operation?:string|Blob|((data)=>(any|Promise<any>)), 
     options?: {
         imports?: ImportsInput, 
-        functions?:{[key:string]:Function|string},
+        functions?:{[key:string]:Function},
         message: any, 
         transfer?: Transferable[], 
         port?: Worker|Worker[], 
@@ -68,7 +68,7 @@ export function threadop(
     operation?:string|Blob|((data)=>(any|Promise<any>)), 
     options?: {
         imports?: ImportsInput, 
-        functions?:{[key:string]:Function|string},
+        functions?:{[key:string]:Function},
         message: any|any[], //array inputs interpreted as per-thread inputs, can be longer than the number of threads
         transfer?: Transferable[], 
         port?: Worker|Worker[], 
@@ -85,7 +85,7 @@ export function threadop(
     operation?:string|Blob|((data)=>(any|Promise<any>)), 
     options?: {
         imports?: ImportsInput, 
-        functions?:{[key:string]:Function|string},
+        functions?:{[key:string]:Function},
         transfer?: Transferable[], 
         port?: Worker|Worker[], 
         blocking?: boolean,
@@ -100,7 +100,7 @@ export function threadop(
     operation?:string|Blob|((data)=>(any|Promise<any>)), 
     options?: {
         imports?: ImportsInput, 
-        functions?:{[key:string]:Function|string},
+        functions?:{[key:string]:Function},
         transfer?: Transferable[], 
         port?: Worker|Worker[], 
         blocking?: boolean,
@@ -127,7 +127,7 @@ export function threadop(
         callback
     }:{
         imports?:ImportsInput, //ImportsInput
-        functions?:{[key:string]:Function|string},
+        functions?:{[key:string]:Function},
         message?:any, 
         transfer?:Transferable[], 
         port?:Worker|Worker[], 
@@ -757,7 +757,7 @@ export const initWorker = (inputFunction:((data)=>(any|Promise<any>))=()=>{}, fu
 
 export const workerFnString = initWorker.toString();
 
-export const generateWorkerURL = (operation:Function=()=>{}, imports, functionSet?:{[key:string]:Function|string}) => {
+export const generateWorkerURL = (operation:Function=()=>{}, imports, functionSet?:{[key:string]:Function}) => {
     // Inner function that will run inside the worker
     
     // Convert the worker function to a string, including imports

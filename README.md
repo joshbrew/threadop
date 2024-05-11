@@ -128,7 +128,7 @@ function threadop(
     operation?:string|Blob|((data)=>(any|Promise<any>)), 
     options?: {
         imports?: ImportsInput, 
-        functions?:{[key:string]:Function|string},
+        functions?:{[key:string]:Function},
         message: any, 
         transfer?: Transferable[], 
         port?: Worker|Worker[], 
@@ -144,7 +144,7 @@ function threadop(
     operation?:string|Blob|((data)=>(any|Promise<any>)), 
     options?: {
         imports?: ImportsInput, 
-        functions?:{[key:string]:Function|string},
+        functions?:{[key:string]:Function},
         message: any|any[], //array inputs interpreted as per-thread inputs, can be longer than the number of threads
         transfer?: Transferable[], 
         port?: Worker|Worker[], 
@@ -161,7 +161,7 @@ function threadop(
     operation?:string|Blob|((data)=>(any|Promise<any>)), 
     options?: {
         imports?: ImportsInput, 
-        functions?:{[key:string]:Function|string},
+        functions?:{[key:string]:Function},
         transfer?: Transferable[], 
         port?: Worker|Worker[], 
         blocking?: boolean,
