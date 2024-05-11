@@ -6,9 +6,11 @@ export type ModuleImport = {
 export type ImportsInput = string | string[] | ModuleImport;
 export type WorkerHelper = {
     run: (message: any, transfer?: Transferable[], overridePort?: boolean | number | string | 'both') => Promise<any>;
+    set: (fn: string | Function, fnName?: string) => Promise<string>;
+    call: (fnName: string, message: any, transfer?: Transferable[], overridePort?: boolean | number | string | 'both') => Promise<any>;
     terminate: () => void;
     addPort: (port: Worker) => void;
-    addCallback: (callback?: (data: any) => void, oneOff?: boolean) => number;
+    addCallback: (callback?: (data: any) => void, oneOff?: boolean, fnName?: string) => number;
     removeCallback: (cb: number) => void;
     setLoop: (interval: any, message: any, transfer: any) => void;
     setAnimation: (message: any, transfer: any) => void;
@@ -21,9 +23,11 @@ export type WorkerHelper = {
 };
 export type WorkerPoolHelper = {
     run: (message: any | any[], transfer?: (Transferable[]) | ((Transferable[])[]), overridePort?: boolean | number | string | 'both', workerId?: number | string) => Promise<any>;
+    set: (fn: string | Function, fnName?: string) => Promise<string>;
+    call: (fnName: string, message: any, transfer?: Transferable[], overridePort?: boolean | number | string | 'both', workerId?: number | string) => Promise<any>;
     terminate: (workerId?: number | string) => void;
     addPort: (port: Worker, workerId?: number | string) => boolean | boolean[];
-    addCallback: (callback?: (data: any) => void, oneOff?: boolean, workerId?: number | string) => number | number[];
+    addCallback: (callback?: (data: any) => void, oneOff?: boolean, fnName?: string, workerId?: number | string) => number | number[];
     removeCallback: (cb: number, workerId?: number | string) => void;
     addWorker: () => number;
     setLoop: (interval: any, message: any, transfer: any, workerId?: number | string) => void;
@@ -42,6 +46,9 @@ export type WorkerPoolHelper = {
 };
 export declare function threadop(operation?: string | Blob | ((data: any) => (any | Promise<any>)), options?: {
     imports?: ImportsInput;
+    functions?: {
+        [key: string]: Function | string;
+    };
     message: any;
     transfer?: Transferable[];
     port?: Worker | Worker[];
@@ -52,6 +59,9 @@ export declare function threadop(operation?: string | Blob | ((data: any) => (an
 }): Promise<any>;
 export declare function threadop(operation?: string | Blob | ((data: any) => (any | Promise<any>)), options?: {
     imports?: ImportsInput;
+    functions?: {
+        [key: string]: Function | string;
+    };
     message: any | any[];
     transfer?: Transferable[];
     port?: Worker | Worker[];
@@ -63,6 +73,9 @@ export declare function threadop(operation?: string | Blob | ((data: any) => (an
 }): Promise<any[]>;
 export declare function threadop(operation?: string | Blob | ((data: any) => (any | Promise<any>)), options?: {
     imports?: ImportsInput;
+    functions?: {
+        [key: string]: Function | string;
+    };
     transfer?: Transferable[];
     port?: Worker | Worker[];
     blocking?: boolean;
@@ -72,6 +85,9 @@ export declare function threadop(operation?: string | Blob | ((data: any) => (an
 }): Promise<WorkerHelper>;
 export declare function threadop(operation?: string | Blob | ((data: any) => (any | Promise<any>)), options?: {
     imports?: ImportsInput;
+    functions?: {
+        [key: string]: Function | string;
+    };
     transfer?: Transferable[];
     port?: Worker | Worker[];
     blocking?: boolean;
@@ -80,7 +96,14 @@ export declare function threadop(operation?: string | Blob | ((data: any) => (an
     animate?: boolean;
     callback?: (data: any) => void;
 }): Promise<WorkerPoolHelper>;
-export declare const initWorker: (inputFunction?: (data: any) => (any | Promise<any>)) => void;
+export declare const initWorker: (inputFunction?: ((data) => (any | Promise<any>)), functionSet?: {
+    [key: string]: Function;
+}) => void;
 export declare const workerFnString: string;
-export declare const generateWorkerURL: (operation: any, imports: any) => string;
+export declare const generateWorkerURL: (operation: Function, imports: any, functionSet?: {
+    [key: string]: Function | string;
+}) => string;
+export declare let recursivelyStringifyFunctions: (obj: {
+    [key: string]: any;
+}) => {};
 export default threadop;

@@ -14,9 +14,11 @@ export type ImportsInput =
 
 export type WorkerHelper = {
     run: (message: any, transfer?: Transferable[], overridePort?:boolean|number|string|'both') => Promise<any>;
+    set: (fn:string|Function, fnName?:string) => Promise<string>;
+    call: (fnName:string, message: any, transfer?: Transferable[], overridePort?:boolean|number|string|'both') => Promise<any>;
     terminate: () => void;
     addPort: (port: Worker) => void;
-    addCallback: (callback?: (data: any) => void, oneOff?: boolean) => number;
+    addCallback: (callback?: (data: any) => void, oneOff?: boolean, fnName?:string) => number;
     removeCallback: (cb: number) => void;
     setLoop: (interval, message, transfer) => void, //can provide arguments to send results on loop
     setAnimation: (message, transfer) => void,      //run an animation function, e.g. transfer a canvas with parameters
@@ -28,9 +30,11 @@ export type WorkerHelper = {
 
 export type WorkerPoolHelper = {
     run: (message: any|any[], transfer?: (Transferable[])|((Transferable[])[]), overridePort?:boolean|number|string|'both', workerId?:number|string) => Promise<any>;
+    set: (fn:string|Function, fnName?:string) => Promise<string>;
+    call: (fnName:string, message: any, transfer?: Transferable[], overridePort?:boolean|number|string|'both', workerId?:number|string) => Promise<any>;
     terminate: (workerId?:number|string) => void;
     addPort: (port: Worker, workerId?:number|string) => boolean|boolean[];
-    addCallback: (callback?: (data: any) => void, oneOff?: boolean, workerId?:number|string) => number|number[];
+    addCallback: (callback?: (data: any) => void, oneOff?: boolean, fnName?:string, workerId?:number|string) => number|number[];
     removeCallback: (cb: number, workerId?:number|string) => void;
     addWorker:() => number;
     setLoop: (interval, message, transfer, workerId?:number|string) => void, //provide arguments and run a function/send results on loop
@@ -48,6 +52,7 @@ export function threadop(
     operation?:string|Blob|((data)=>(any|Promise<any>)), 
     options?: {
         imports?: ImportsInput, 
+        functions?:{[key:string]:Function|string},
         message: any, 
         transfer?: Transferable[], 
         port?: Worker|Worker[], 
@@ -63,6 +68,7 @@ export function threadop(
     operation?:string|Blob|((data)=>(any|Promise<any>)), 
     options?: {
         imports?: ImportsInput, 
+        functions?:{[key:string]:Function|string},
         message: any|any[], //array inputs interpreted as per-thread inputs, can be longer than the number of threads
         transfer?: Transferable[], 
         port?: Worker|Worker[], 
@@ -79,6 +85,7 @@ export function threadop(
     operation?:string|Blob|((data)=>(any|Promise<any>)), 
     options?: {
         imports?: ImportsInput, 
+        functions?:{[key:string]:Function|string},
         transfer?: Transferable[], 
         port?: Worker|Worker[], 
         blocking?: boolean,
@@ -93,6 +100,7 @@ export function threadop(
     operation?:string|Blob|((data)=>(any|Promise<any>)), 
     options?: {
         imports?: ImportsInput, 
+        functions?:{[key:string]:Function|string},
         transfer?: Transferable[], 
         port?: Worker|Worker[], 
         blocking?: boolean,
@@ -108,6 +116,7 @@ export function threadop(
     operation:string|Blob|((data)=>(any|Promise<any>)) = (data) => data, 
     { 
         imports, //ImportsInput
+        functions,
         message, 
         transfer, 
         port, 
@@ -118,6 +127,7 @@ export function threadop(
         callback
     }:{
         imports?:ImportsInput, //ImportsInput
+        functions?:{[key:string]:Function|string},
         message?:any, 
         transfer?:Transferable[], 
         port?:Worker|Worker[], 
@@ -143,7 +153,7 @@ export function threadop(
             }
             workerURL = operation; //string url or blob
         } else {
-            workerURL = generateWorkerURL(operation, imports);
+            workerURL = generateWorkerURL(operation, imports, functions);
         }
         const WorkerHelper = (worker) => {
 
@@ -151,24 +161,26 @@ export function threadop(
             let blocked = false; //will prevent running if a thread is blocked
 
             worker.onmessage = (ev) => {
-                for(const key in callbacks) {callbacks[key](ev.data.message, ev.data.cb);}
+                for(const key in callbacks) {
+                    callbacks[key](ev.data.message, ev.data.cb); //callbacks will tell you if specific functions were called
+                }
             }
             
             worker.onerror = (ev) => {
                 console.error(new Error("Worker encountered an error: " + ev.message));
             };
 
-            let mkcb = (msg, tx, overridePort) => {
+            let mkcb = (msg:any, tx?, overridePort?, fnName?:string) => {
                 return new Promise((res,rej) => {
                     if(!overridePort && (worker as any).PORTS) {
-                        worker.postMessage({message:msg, overridePort}, tx);
+                        worker.postMessage({message:msg, overridePort, fnName}, tx);
                         res(true);
                     } else {
                         if(blocking) {
                             if(blocked) return new Promise((res,rej) => { rej("Thread Blocked") });
                             blocked = true;
                         }
-                        let cb = Math.random();
+                        let cb = Math.floor(Math.random()*1000000000000000);
                         callbacks[cb] = (data, c) => { 
                             if(cb === c) {
                                 delete callbacks[cb]; 
@@ -196,13 +208,26 @@ export function threadop(
                     }
                 },
                 addPort: (port) => setupPort(worker, port, blocking), //add a message port to send data to a second worker instead of to main thread, can send to multiple 
-                addCallback:(callback=(data)=> {}, oneOff) => { //response to worker data
-                    let cb = Math.random(); 
-                    callbacks[cb] = oneOff ? (data) => { 
-                        callback(data); delete callbacks[cb];
+                
+                addCallback:(callback=(data:any)=> {}, oneOff, fnName?:string) => { //response to worker data
+                    let cb = Math.floor(Math.random()*1000000000000000); 
+                    callbacks[cb] = (oneOff || fnName) ? (data, fN) => { 
+                        if(!fnName || fN === fnName) callback(data); 
+                        if(oneOff) delete callbacks[cb];
                     } : callback;
                     return cb;
                 },
+
+                //add a function to the thread
+                set:(fn:string|Function, fnName?:string) => {
+                    if(typeof fn === 'function') fn = fn.toString(); 
+                    return mkcb({setFunction:fn, setFunctionName:fnName});
+                },  
+                //call a function on the thread
+                call:(fnName:string, message:any, transfer:Transferable[], overridePort?:boolean|number|string|'both') => {
+                    return mkcb(message,transfer,overridePort,fnName);
+                },
+
                 removeCallback:(cb) => {
                     delete helper.callbacks[cb];
                 },
@@ -237,7 +262,7 @@ export function threadop(
 
             function addWrkr() {
                 let worker = new Worker(workerURL, (imports || typeof operation !== 'function') ? { type: "module" } : undefined);
-                const id = Math.random();
+                const id = Math.floor(Math.random()*1000000000000000);
                 (worker as any).id = id;
                 workers[id] = worker;
                 return id;
@@ -305,29 +330,39 @@ export function threadop(
 
                 let threadRot = 0;
 
+                const mkcb = (message:any|any[], transfer?:(Transferable[])|((Transferable[])[]), overridePort?:boolean|number|string|'both', fnName?:string, workerId?:string|number) => {
+                    if(workerId) {
+                        if(fnName) return helper.helpers[workerId]?.call(fnName, message, transfer as Transferable[])
+                        else return helper.helpers[workerId]?.run(message, transfer as Transferable[]);
+                    } else {
+                        if(Array.isArray(message)) { //array messages will be interpreted as being divided up in the threadpool on rotation
+                            const len = message.length;
+                            let runs = new Array(len) as Promise<any>[];
+                            for(let i = 0; i < len; i++) {
+                                let run;
+                                
+                                if(fnName) run = helper.helpers[workerId]?.call(fnName, message[i], transfer[i] as Transferable[])
+                                else run = helper.helpers[keys[threadRot]].run(message[i], transfer[i] as Transferable[], overridePort);
+                                threadRot++; if(threadRot >= keys.length) threadRot = 0; //reset rotation
+                                runs[i] = run;
+                            }
+                            return runs;
+                        } else {
+                            let run;
+                            if(fnName) run = helper.helpers[keys[threadRot]].call(fnName, message, transfer as Transferable[], overridePort);
+                            else run = helper.helpers[keys[threadRot]].run(message, transfer as Transferable[], overridePort);
+                            threadRot++; if(threadRot >= keys.length) threadRot = 0; //reset rotation
+                            return run as Promise<any>;
+                        }
+                    }
+                }
+
                 Object.assign(helper, {
                     workers,
                     helpers:{} as {[key:string]:WorkerHelper},
                     keys,
                     run:(message:any|any[], transfer:(Transferable[])|((Transferable[])[]), overridePort?:boolean|number|string|'both', workerId?:string|number)=>{
-                        if(workerId) {
-                            return helper.helpers[workerId]?.run(message, transfer as Transferable[]);
-                        } else {
-                            if(Array.isArray(message)) { //array messages will be interpreted as being divided up in the threadpool on rotation
-                                const len = message.length;
-                                let runs = [] as Promise<any>[];
-                                for(let i = 0; i < len; i++) {
-                                    let run = helper.helpers[keys[threadRot]].run(message[i], transfer[i] as Transferable[], overridePort);
-                                    threadRot++; if(threadRot >= keys.length) threadRot = 0; //reset rotation
-                                    runs.push(run);
-                                }
-                                return runs;
-                            } else {
-                                let run = helper.helpers[keys[threadRot]].run(message, transfer as Transferable[], overridePort);
-                                threadRot++; if(threadRot >= keys.length) threadRot = 0; //reset rotation
-                                return run;
-                            }
-                        }
+                        return mkcb(message,transfer,overridePort,undefined, workerId);
                     },
                     terminate:(workerId?:string|number)=>{
                         function trm(id) {
@@ -338,6 +373,15 @@ export function threadop(
                         if(workerId) {
                             trm(workerId);
                         } else keys.forEach(trm);
+                    },
+                    //add a function to the thread
+                    set:(fn:string|Function, fnName?:string) => {
+                        if(typeof fn === 'function') fn = fn.toString(); 
+                        return mkcb({setFunction:fn, setFunctionName:fnName});
+                    },  
+                    //call a function on the thread
+                    call:(fnName:string, message:any, transfer:Transferable[], overridePort?:boolean|number|string|'both', workerId?:string|number) => {
+                        return mkcb(message,transfer,overridePort,fnName,workerId);
                     },
                     addWorker:() => {
                         const id = addWrkr();
@@ -356,9 +400,9 @@ export function threadop(
                             return ap(workerId);
                         } else return keys.map(ap);
                     },
-                    addCallback: (callback?: (data: any) => {}, oneOff?: boolean, workerId?:number|string) => {
+                    addCallback: (callback?: (data: any) => {}, oneOff?: boolean, fnName?:string, workerId?:number|string) => {
                         function ac(id) {
-                            return helper.helpers[id]?.addCallback(callback, oneOff);
+                            return helper.helpers[id]?.addCallback(callback, oneOff, fnName);
                         }
                         if(workerId) {
                             return ac(workerId);
@@ -410,12 +454,12 @@ export function threadop(
 
         }
         else {
-            const id = Math.random();
+            const id = Math.floor(Math.random()*1000000000000000);
             const worker = new Worker(workerURL, (imports || typeof operation !== 'function') ? { type: "module" } : undefined);
             (worker as any).id = id;
             // Otherwise, set up any provided ports and return a control object
             if (port) {
-                if(!(port as any).id) (port as any).id = Math.random();
+                if(!(port as any).id) (port as any).id = Math.floor(Math.random()*1000000000000000);
                 if(Array.isArray(port)) port.map((w)=>{setupPort(worker, w, blocking)})
                 else setupPort(worker, port, blocking);
             }
@@ -507,8 +551,8 @@ function getImports(imports) {
 
 function setupPort(worker, port, blocking) {
     const channel = new MessageChannel();
-    if(!worker.id) worker.id = Math.random();
-    if(!port.id) port.id = Math.random();
+    if(!worker.id) worker.id = Math.floor(Math.random()*1000000000000000);
+    if(!port.id) port.id = Math.floor(Math.random()*1000000000000000);
     worker.postMessage({ COMMAND:{SENDER: channel.port1, id:port.id, blocking} }, [channel.port1]);
     port.postMessage({ COMMAND:{RECEIVER: channel.port2, id:worker.id, blocking} }, [channel.port2]);	
     
@@ -519,18 +563,65 @@ function setupPort(worker, port, blocking) {
 }
 
 //globalThis.threadop = threadop;
-export const initWorker = (inputFunction:((data)=>(any|Promise<any>))=()=>{}) => {
+export const initWorker = (inputFunction:((data)=>(any|Promise<any>))=()=>{}, functionSet:{[key:string]:Function}={dummy:()=>{}}) => {
 
     //console.log('thread!');
-    globalThis.WORKER = {};
+    globalThis.WORKER = {
+        FUNCTIONS:functionSet //functions to be added and parsed
+    };
+
+    if(functionSet) {
+        Object.keys(functionSet).forEach((k)=>{
+            functionSet[k] = functionSet[k].bind(globalThis.WORKER); //bind scope in case
+        })
+    }
+
+    function parseFunctionFromText(method='') {
+        //Get the text inside of a function (regular or arrow);
+
+        let getFunctionHead = (methodString) => {
+            let startindex = methodString.indexOf('=>')+1;
+            if(startindex <= 0) {
+                startindex = methodString.indexOf('){');
+            }
+            if(startindex <= 0) {
+                startindex = methodString.indexOf(') {');
+            }
+            return methodString.slice(0, methodString.indexOf('{',startindex) + 1);
+        }
+
+        let getFunctionBody = (methodString) => {
+            return methodString.replace(/^\W*(function[^{]+\{([\s\S]*)\}|[^=]+=>[^{]*\{([\s\S]*)\}|[^=]+=>(.+))/i, '$2$3$4');
+        }
+    
+        let newFuncHead = getFunctionHead(method);
+        let newFuncBody = getFunctionBody(method);
+    
+        let newFunc;
+        if (newFuncHead.includes('function')) {
+            let varName = newFuncHead.substring(newFuncHead.indexOf('(')+1,newFuncHead.lastIndexOf(')'));
+            newFunc = new Function(varName, newFuncBody);
+        } else {
+            if (newFuncHead.substring(0, 6) === newFuncBody.substring(0, 6)) {
+                let varName = newFuncHead.substring(newFuncHead.indexOf('(')+1,newFuncHead.lastIndexOf(')'));
+                newFunc = new Function(varName, newFuncBody.substring(newFuncBody.indexOf('{') + 1, newFuncBody.length - 1));
+            } else {
+                try { newFunc = (0, eval)(method); } catch { } // Just evaluate the method
+            }
+        }
+    
+        return newFunc;
+    
+    }
+
     inputFunction = inputFunction.bind(globalThis.WORKER); //give it a dedicated scope
     
-    const sendData = (data:any, cb:number, oneOff:boolean, overridePort:boolean|number|string|'both') => {
+    const sendData = (data?:any, cb?:number, oneOff?:boolean, overridePort?:boolean|number|string|'both', fnName?:string) => {
         if (globalThis.WORKER.SENDERS && (overridePort !== true)) { //forward to message ports instead of to main thread
             if(overridePort !== undefined && overridePort !== 'both') {
                 if(globalThis.WORKER.SENDERS[overridePort as string]) {
-                    if(data?.message) globalThis.WORKER.SENDERS[overridePort as string].postMessage({message:data.message, overridePort:data?.overridePort}, data.transfer);
-                    else globalThis.WORKER.SENDERS[overridePort as string].postMessage({message:data, overridePort:data?.overridePort});
+                    if(data?.message) globalThis.WORKER.SENDERS[overridePort as string].postMessage({message:data.message, overridePort:data?.overridePort, fnName:data?.fnName}, data.transfer);
+                    else globalThis.WORKER.SENDERS[overridePort as string].postMessage({message:data, overridePort:data?.overridePort, fnName:data?.fnName});
                 }
             } else {
                 for(const key in globalThis.WORKER.SENDERS) {
@@ -541,38 +632,50 @@ export const initWorker = (inputFunction:((data)=>(any|Promise<any>))=()=>{}) =>
                         }
                         globalThis.WORKER.BLOCKED[key] = true;
                     } 
-                    if(data?.message) globalThis.WORKER.SENDERS[key].postMessage({message:data.message, overridePort:data?.overridePort}, data.transfer);
-                    else globalThis.WORKER.SENDERS[key].postMessage({message:data, overridePort:data?.overridePort});
+                    if(data?.message) globalThis.WORKER.SENDERS[key].postMessage({message:data.message, overridePort:data?.overridePort, fnName:data?.fnName}, data.transfer);
+                    else globalThis.WORKER.SENDERS[key].postMessage({message:data, overridePort:data?.overridePort, fnName:data?.fnName});
                 }
                 if(oneOff) postMessage(true); //need to tell main thread to quit
             }
         } 
         if(!globalThis.WORKER.SENDERS || (overridePort === true || (overridePort === 'both'))) { //if we overridePort with a specific workerId, then don't pass back to main thread as we imply we want a specific port to be talked to
-            if(data?.message) postMessage({message:data.message, cb, overridePort:data?.overridePort}, data.transfer); //specifically recognized this output format
-            else postMessage({message:data, cb, overridePort:data?.overridePort});
+            if(data?.message) postMessage({message:data.message, cb, overridePort:data?.overridePort, fnName}, data.transfer); //specifically recognized this output format
+            else postMessage({message:data, cb, overridePort:data?.overridePort, fnName});
         }
     }
 
     const onData = (ev:any, RECEIVER?:MessagePort) => {
         //@ts-ignore
-        let result = (inputFunction)(ev.data?.message) as any;
+        let result;
+        if (ev.data.setFunction) {
+            let fn = parseFunctionFromText(ev.data.setFunction).bind(globalThis.WORKER);
+            let fnName = ev.data.setFunctionName || Math.floor(Math.random()*1000000000000000);
+            result = fnName;
+            globalThis.WORKER.FUNCTIONS[fnName] = fn;
+        } else if(ev.data.fnName) {
+            const fn = globalThis.WORKER.FUNCTIONS[ev.data.fnName];
+            if(fn) {
+                result = fn(ev.data?.message);
+            }
+        } else result = (inputFunction)(ev.data?.message) as any;
         if (result?.then) {
             result.then((resolvedData) => {
                 if(RECEIVER) {
                     //console.log("sending back to SENDER", true);
                     RECEIVER.postMessage(true);
                 }
-                sendData(resolvedData, ev.data.cb, ev.data.oneOff, ev.data.overridePort);
+                sendData(resolvedData, ev.data.cb, ev.data.oneOff, ev.data.overridePort, ev.data.fnName);
             });
         } else {
             if(RECEIVER) {
                 //console.log("sending back to SENDER", true);
                 RECEIVER.postMessage(true);
             }
-            sendData(result, ev.data.cb, ev.data.oneOff, ev.data.overridePort);
+            sendData(result, ev.data.cb, ev.data.oneOff, ev.data.overridePort, ev.data.fnName);
         }
     };
 
+    //the worker's response to messages
     globalThis.onmessage = (ev) => {
         // Handle different types of messages: RECEIVER, SENDER, TERMINATED, or data
         
@@ -654,7 +757,7 @@ export const initWorker = (inputFunction:((data)=>(any|Promise<any>))=()=>{}) =>
 
 export const workerFnString = initWorker.toString();
 
-export const generateWorkerURL = (operation, imports) => {
+export const generateWorkerURL = (operation:Function=()=>{}, imports, functionSet?:{[key:string]:Function|string}) => {
     // Inner function that will run inside the worker
     
     // Convert the worker function to a string, including imports
@@ -662,6 +765,11 @@ export const generateWorkerURL = (operation, imports) => {
         '()=>{}', 
         operation.toString()
     );
+
+    if(functionSet) {
+        workerFnString.replace('{dummy:()=>{}}', JSON.stringify(recursivelyStringifyFunctions(functionSet)));
+    }
+
     let importString = getImports(imports);
 
     //console.log(importString);
@@ -673,7 +781,17 @@ export const generateWorkerURL = (operation, imports) => {
     return URL.createObjectURL(blob);
 }
 
-
-
+export let recursivelyStringifyFunctions = (obj:{[key:string]:any}) => {
+    let cpy = {};
+    for(const key in obj) {
+        if(typeof obj[key] === 'object') {
+            cpy[key] = recursivelyStringifyFunctions(obj[key]);
+        }
+        else if (typeof obj[key] === 'function') {
+            cpy[key] = obj[key].toString();
+        } else cpy[key] = obj[key];
+    } 
+    return cpy;
+}
 
 export default threadop;

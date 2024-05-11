@@ -8,7 +8,7 @@
 
 ## Description
 
-Pure (~450 lines unminified, 7kb minified) implementation of a Web Worker thread operation helper. For use in browser or with the web worker library in Nodejs
+Pure (10kb minified) implementation of a Web Worker thread operation helper. For use in browser or with the web worker library in Nodejs
 
 Create multithreaded pipelines (with esm imports) in a single script file with a clear, minimal workflow.
 
@@ -16,8 +16,9 @@ Create multithreaded pipelines (with esm imports) in a single script file with a
 - One-off or repeat use with easy cleanup.
 - Chain multiple workers with message port automation
 - Instantiate threadpools from a single function, chain multiple threadpools.
+- Create threads with lists of functions you can call by name. 
 - Specify imports (local or remote) from strings or objects to use the full range of esm import abilities.
-- loops, animations, with propagation
+- loops, animations, with propagation.
 - Dramatically increase program performance with easy parallelism! The time to instantiate a basic worker is ~0.1ms. 
 
 Instantiate threads from generic functions (with imports!) or from URLS i.e. worker file locations or Blobs.
@@ -86,7 +87,9 @@ type ImportsInput =
     | ModuleImport;      // Object describing imports e.g. { './mod.js': { useState: true } }
 
 type WorkerHelper = {
-    run: (message: any, transfer?: Transferable[], overridePort?:boolean|string|'both') => Promise<any>;
+    run: (message: any, transfer?: Transferable[], overridePort?:boolean|number|string|'both') => Promise<any>;
+    set: (fn:string|Function, fnName?:string) => Promise<string>;
+    call: (fnName:string, message: any, transfer?: Transferable[], overridePort?:boolean|number|string|'both') => Promise<any>;
     terminate: () => void;
     addPort: (port: Worker) => void;
     addCallback: (callback?: (data: any) => void, oneOff?: boolean) => number;
@@ -95,11 +98,14 @@ type WorkerHelper = {
     setAnimation: (message, transfer) => void,      //run an animation function, e.g. transfer a canvas with parameters
     stop: () => void, 
     worker: Worker;
+    id:number,
     callbacks: {[key: number]: (data: any, cb?: number) => void};
 }
 
 type WorkerPoolHelper = {
-    run: (message: any|any[], transfer?: (Transferable[])|((Transferable[])[]), overridePort?:boolean|string|'both', workerId?:number|string) => Promise<any>;
+    run: (message: any|any[], transfer?: (Transferable[])|((Transferable[])[]), overridePort?:boolean|number|string|'both', workerId?:number|string) => Promise<any>;
+    set: (fn:string|Function, fnName?:string) => Promise<string>;
+    call: (fnName:string, message: any, transfer?: Transferable[], overridePort?:boolean|number|string|'both', workerId?:number|string) => Promise<any>;
     terminate: (workerId?:number|string) => void;
     addPort: (port: Worker, workerId?:number|string) => boolean|boolean[];
     addCallback: (callback?: (data: any) => void, oneOff?: boolean, workerId?:number|string) => number|number[];
@@ -117,9 +123,10 @@ type WorkerPoolHelper = {
 //overloads
 // When the message is defined, the function returns a Promise<any>.
 function threadop(
-    operation?:string|Blob|((data)=>void), 
+    operation?:string|Blob|((data)=>(any|Promise<any>)), 
     options?: {
         imports?: ImportsInput, 
+        functions?:{[key:string]:Function|string},
         message: any, 
         transfer?: Transferable[], 
         port?: Worker|Worker[], 
@@ -131,10 +138,11 @@ function threadop(
 ): Promise<any>;
 
 // When the message is defined and pool is defined, the function returns a Promise<any[]>.
-export function threadop(
-    operation?:string|Blob|((data)=>void), 
+function threadop(
+    operation?:string|Blob|((data)=>(any|Promise<any>)), 
     options?: {
         imports?: ImportsInput, 
+        functions?:{[key:string]:Function|string},
         message: any|any[], //array inputs interpreted as per-thread inputs, can be longer than the number of threads
         transfer?: Transferable[], 
         port?: Worker|Worker[], 
@@ -147,10 +155,11 @@ export function threadop(
 ): Promise<any[]>;
 
 // When the message isn't defined, the function returns a Promise<WorkerHelper>.
-export function threadop(
-    operation?:string|Blob|((data)=>void), 
+function threadop(
+    operation?:string|Blob|((data)=>(any|Promise<any>)), 
     options?: {
         imports?: ImportsInput, 
+        functions?:{[key:string]:Function|string},
         transfer?: Transferable[], 
         port?: Worker|Worker[], 
         blocking?: boolean,
@@ -159,22 +168,6 @@ export function threadop(
         callback?:(data) => void
     }
 ): Promise<WorkerHelper>;
-
-// When the message isn't defined and pool is defined, the function returns a Promise<WorkerPoolHelper>.
-export function threadop(
-    operation?:string|Blob|((data)=>void), 
-    options?: {
-        imports?: ImportsInput, 
-        transfer?: Transferable[], 
-        port?: Worker|Worker[], 
-        blocking?: boolean,
-        pool:number,
-        loop?:number,
-        animate?:boolean,
-        callback?:(data) => void
-    }
-): Promise<WorkerPoolHelper>;
-
 
 
 
