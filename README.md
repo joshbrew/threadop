@@ -6,6 +6,8 @@
 ![threadop-downloads](https://img.shields.io/npm/dt/threadop.svg)
 ![threadop-l](https://img.shields.io/npm/l/threadop)
 
+### [Example](https://threadop.netlify.app)
+
 ## Description
 
 Pure (10kb minified) implementation of a Web Worker thread operation helper. For use in browser or with the web worker library in Nodejs
