@@ -71,6 +71,8 @@ Or access it as a global variable
 </html>
 ```
 
+You can also define the first input as the options object instead of the operation function. This is useful when you want to define a list of functions to call instead of a single operation, for even more complex communications.
+
 ## Input Options
 
 ```ts
@@ -188,8 +190,6 @@ type ThreadOptions = {
 };
 
 ```
-
-You can also define the first input as the options object instead of the operation function. This is useful when you want to define a list of functions to call instead of a single operation, for even more complex communications.
 
 ## Examples
 
