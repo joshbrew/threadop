@@ -46,8 +46,23 @@ export type WorkerPoolHelper = {
     callbacks: {[key: number]: (data: any, cb?: number) => void};
 }
 
+export type ThreadOptions = {
+    operation?:string|Blob|((data)=>(any|Promise<any>)), 
+    imports?:ImportsInput, //ImportsInput
+    functions?:{[key:string]:Function},
+    message?:any, 
+    transfer?:Transferable[], 
+    port?:Worker|Worker[], 
+    blocking?:boolean,
+    pool?:number,
+    loop?:number, //loop the function on a millisecond interval
+    animate?:boolean, //loop the function on an animation frame,
+    callback?:(data) => void
+};
+
+type Op = string|Blob|((data)=>(any|Promise<any>));
+
 //overloads
-// When the message is defined, the function returns a Promise<any>.
 export function threadop(
     operation?:string|Blob|((data)=>(any|Promise<any>)), 
     options?: {
@@ -108,13 +123,80 @@ export function threadop(
         loop?:number,
         animate?:boolean,
         callback?:(data) => void
-    }
+    } 
 ): Promise<WorkerPoolHelper>;
+// When the message is defined, the function returns a Promise<any>.
+export function threadop(
+    options?: {
+        operation?:string|Blob|((data)=>(any|Promise<any>)), 
+        imports?: ImportsInput, 
+        functions?:{[key:string]:Function},
+        message: any, 
+        transfer?: Transferable[], 
+        port?: Worker|Worker[], 
+        blocking?: boolean,
+        loop?:number,
+        animate?:boolean,
+        callback?:(data) => void
+    }
+): Promise<any>;
+
+// When the message is defined and pool is defined, the function returns a Promise<any[]>.
+export function threadop(
+    options?: {
+        operation?:string|Blob|((data)=>(any|Promise<any>)), 
+        imports?: ImportsInput, 
+        functions?:{[key:string]:Function},
+        message: any|any[], //array inputs interpreted as per-thread inputs, can be longer than the number of threads
+        transfer?: Transferable[], 
+        port?: Worker|Worker[], 
+        blocking?: boolean,
+        pool:number,
+        loop?:number,
+        animate?:boolean,
+        callback?:(data) => void
+    }
+): Promise<any[]>;
+
+// When the message isn't defined, the function returns a Promise<WorkerHelper>.
+export function threadop(
+    options?: {
+        operation?:string|Blob|((data)=>(any|Promise<any>)), 
+        imports?: ImportsInput, 
+        functions?:{[key:string]:Function},
+        transfer?: Transferable[], 
+        port?: Worker|Worker[], 
+        blocking?: boolean,
+        loop?:number,
+        animate?:boolean,
+        callback?:(data) => void
+    }
+): Promise<WorkerHelper>;
+
+// When the message isn't defined and pool is defined, the function returns a Promise<WorkerPoolHelper>.
+export function threadop(
+    options?: {
+        operation?:string|Blob|((data)=>(any|Promise<any>)), 
+        imports?: ImportsInput, 
+        functions?:{[key:string]:Function},
+        transfer?: Transferable[], 
+        port?: Worker|Worker[], 
+        blocking?: boolean,
+        pool:number,
+        loop?:number,
+        animate?:boolean,
+        callback?:(data) => void
+    } 
+): Promise<WorkerPoolHelper>;
+
 
 //implementation
 export function threadop(
-    operation:string|Blob|((data)=>(any|Promise<any>)) = (data) => data, 
-    { 
+   options:Op|ThreadOptions = (data) => data,
+   opts?:ThreadOptions //use this for options if using the first as a 
+): Promise<any | WorkerHelper>  {
+
+    let operation,
         imports, //ImportsInput
         functions,
         message, 
@@ -124,20 +206,29 @@ export function threadop(
         pool,
         loop,
         animate,
-        callback
-    }:{
-        imports?:ImportsInput, //ImportsInput
-        functions?:{[key:string]:Function},
-        message?:any, 
-        transfer?:Transferable[], 
-        port?:Worker|Worker[], 
-        blocking?:boolean,
-        pool?:number,
-        loop?:number, //loop the function on a millisecond interval
-        animate?:boolean, //loop the function on an animation frame,
-        callback?:(data) => void
-    } = {} as any
-): Promise<any | WorkerHelper>  {
+        callback;
+
+    if( 
+        options?.constructor?.name !== 'Object' //instanceof will throw errors on nodejs without polyfill
+    ) {
+        operation = options;
+    }
+
+    if (options?.constructor?.name === 'Object' || opts) {
+        const o = opts || options as ThreadOptions;
+        if(o.operation) operation = o.operation;
+        imports = o.imports; 
+        functions = o.functions;
+        message = o.message;
+        transfer = o.transfer;
+        port = o.port;
+        blocking = o.blocking;
+        pool = o.pool;
+        loop = o.loop;
+        animate = o.animate;
+        callback = o.callback;
+    }
+
     return new Promise((resolve, reject) => {
 
         let workerURL;

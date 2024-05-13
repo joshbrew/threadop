@@ -44,6 +44,21 @@ export type WorkerPoolHelper = {
         [key: number]: (data: any, cb?: number) => void;
     };
 };
+export type ThreadOptions = {
+    operation?: string | Blob | ((data: any) => (any | Promise<any>));
+    imports?: ImportsInput;
+    functions?: {
+        [key: string]: Function;
+    };
+    message?: any;
+    transfer?: Transferable[];
+    port?: Worker | Worker[];
+    blocking?: boolean;
+    pool?: number;
+    loop?: number;
+    animate?: boolean;
+    callback?: (data: any) => void;
+};
 export declare function threadop(operation?: string | Blob | ((data: any) => (any | Promise<any>)), options?: {
     imports?: ImportsInput;
     functions?: {
@@ -84,6 +99,62 @@ export declare function threadop(operation?: string | Blob | ((data: any) => (an
     callback?: (data: any) => void;
 }): Promise<WorkerHelper>;
 export declare function threadop(operation?: string | Blob | ((data: any) => (any | Promise<any>)), options?: {
+    imports?: ImportsInput;
+    functions?: {
+        [key: string]: Function;
+    };
+    transfer?: Transferable[];
+    port?: Worker | Worker[];
+    blocking?: boolean;
+    pool: number;
+    loop?: number;
+    animate?: boolean;
+    callback?: (data: any) => void;
+}): Promise<WorkerPoolHelper>;
+export declare function threadop(options?: {
+    operation?: string | Blob | ((data: any) => (any | Promise<any>));
+    imports?: ImportsInput;
+    functions?: {
+        [key: string]: Function;
+    };
+    message: any;
+    transfer?: Transferable[];
+    port?: Worker | Worker[];
+    blocking?: boolean;
+    loop?: number;
+    animate?: boolean;
+    callback?: (data: any) => void;
+}): Promise<any>;
+export declare function threadop(options?: {
+    operation?: string | Blob | ((data: any) => (any | Promise<any>));
+    imports?: ImportsInput;
+    functions?: {
+        [key: string]: Function;
+    };
+    message: any | any[];
+    transfer?: Transferable[];
+    port?: Worker | Worker[];
+    blocking?: boolean;
+    pool: number;
+    loop?: number;
+    animate?: boolean;
+    callback?: (data: any) => void;
+}): Promise<any[]>;
+export declare function threadop(options?: {
+    operation?: string | Blob | ((data: any) => (any | Promise<any>));
+    imports?: ImportsInput;
+    functions?: {
+        [key: string]: Function;
+    };
+    transfer?: Transferable[];
+    port?: Worker | Worker[];
+    blocking?: boolean;
+    loop?: number;
+    animate?: boolean;
+    callback?: (data: any) => void;
+}): Promise<WorkerHelper>;
+export declare function threadop(options?: {
+    operation?: string | Blob | ((data: any) => (any | Promise<any>));
     imports?: ImportsInput;
     functions?: {
         [key: string]: Function;

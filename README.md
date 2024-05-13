@@ -172,8 +172,24 @@ function threadop(
 ): Promise<WorkerHelper>;
 
 
+//all possible options
+type ThreadOptions = {
+    operation?:string|Blob|((data)=>(any|Promise<any>)), 
+    imports?:ImportsInput, //ImportsInput
+    functions?:{[key:string]:Function},
+    message?:any, 
+    transfer?:Transferable[], 
+    port?:Worker|Worker[], 
+    blocking?:boolean,
+    pool?:number,
+    loop?:number, //loop the function on a millisecond interval
+    animate?:boolean, //loop the function on an animation frame,
+    callback?:(data) => void
+};
 
 ```
+
+You can also define the first input as the options object instead of the operation function. This is useful when you want to define a list of functions to call instead of a single operation, for even more complex communications.
 
 ## Examples
 
