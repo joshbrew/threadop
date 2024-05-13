@@ -76,6 +76,22 @@ You can also define the first input as the options object instead of the operati
 ## Input Options
 
 ```ts
+
+//all possible options
+type ThreadOptions = {
+    operation?:string|Blob|((data)=>(any|Promise<any>)), 
+    imports?:ImportsInput, //ImportsInput
+    functions?:{[key:string]:Function},
+    message?:any, 
+    transfer?:Transferable[], 
+    port?:Worker|Worker[], 
+    blocking?:boolean,
+    pool?:number,
+    loop?:number, //loop the function on a millisecond interval
+    animate?:boolean, //loop the function on an animation frame,
+    callback?:(data) => void
+};
+
 type ModuleImport = {
     [modulePath: string]: 
     | string   // Default import e.g. 'React'
@@ -174,20 +190,6 @@ function threadop(
 ): Promise<WorkerHelper>;
 
 
-//all possible options
-type ThreadOptions = {
-    operation?:string|Blob|((data)=>(any|Promise<any>)), 
-    imports?:ImportsInput, //ImportsInput
-    functions?:{[key:string]:Function},
-    message?:any, 
-    transfer?:Transferable[], 
-    port?:Worker|Worker[], 
-    blocking?:boolean,
-    pool?:number,
-    loop?:number, //loop the function on a millisecond interval
-    animate?:boolean, //loop the function on an animation frame,
-    callback?:(data) => void
-};
 
 ```
 
