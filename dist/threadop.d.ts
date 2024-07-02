@@ -167,7 +167,7 @@ export declare function threadop(options?: {
     animate?: boolean;
     callback?: (data: any) => void;
 }): Promise<WorkerPoolHelper>;
-export declare const initWorker: (inputFunction?: ((data) => (any | Promise<any>)), functionSet?: {
+export declare const initWorker: (inputFunction?: ((data: any) => (any | Promise<any>)), functionSet?: {
     [key: string]: Function;
 }) => void;
 export declare const workerFnString: string;

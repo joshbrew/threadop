@@ -15,7 +15,7 @@ export type ImportsInput =
 export type WorkerHelper = {
     run: (message: any, transfer?: Transferable[], overridePort?:boolean|number|string|'both') => Promise<any>;
     set: (fn:string|Function, fnName?:string) => Promise<string>;
-    call: (fnName:string, message: any, transfer?: Transferable[], overridePort?:boolean|number|string|'both') => Promise<any>;
+    call: (fnName:string, message: any, transfer?: Transferable[], overridePort?:boolean|number|string|'both') => Promise<any>; //in this case message can be an array to be passed as a list of params to complex functions
     terminate: () => void;
     addPort: (port: Worker) => void;
     addCallback: (callback?: (data: any) => void, oneOff?: boolean, fnName?:string) => number;
@@ -31,7 +31,7 @@ export type WorkerHelper = {
 export type WorkerPoolHelper = {
     run: (message: any|any[], transfer?: (Transferable[])|((Transferable[])[]), overridePort?:boolean|number|string|'both', workerId?:number|string) => Promise<any>;
     set: (fn:string|Function, fnName?:string) => Promise<string>;
-    call: (fnName:string, message: any, transfer?: Transferable[], overridePort?:boolean|number|string|'both', workerId?:number|string) => Promise<any>;
+    call: (fnName:string, message: any, transfer?: Transferable[], overridePort?:boolean|number|string|'both', workerId?:number|string) => Promise<any>; //in this case message can be an array to be passed as a list of params to complex functions
     terminate: (workerId?:number|string) => void;
     addPort: (port: Worker, workerId?:number|string) => boolean|boolean[];
     addCallback: (callback?: (data: any) => void, oneOff?: boolean, fnName?:string, workerId?:number|string) => number|number[];
@@ -746,7 +746,9 @@ export const initWorker = (inputFunction:((data)=>(any|Promise<any>))=()=>{}, fu
         } else if(ev.data.fnName) {
             const fn = globalThis.WORKER.FUNCTIONS[ev.data.fnName];
             if(fn) {
-                result = fn(ev.data?.message);
+                if(Array.isArray(ev.data?.message)) {
+                    result = fn(...ev.data.message); //treat array as a params list in this case
+                } else result = fn(ev.data?.message);
             }
         } else result = (inputFunction)(ev.data?.message) as any;
         if (result?.then) {
